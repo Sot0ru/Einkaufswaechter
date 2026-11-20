@@ -63,4 +63,16 @@ export const SCHEMA_STATEMENTS = [
     quantity integer NOT NULL DEFAULT 1,
     checked boolean NOT NULL DEFAULT false
   )`,
+  `CREATE INDEX IF NOT EXISTS weekly_offers_zip_lookup_idx ON weekly_offers (zip_code, valid_from, valid_to, store_id)`,
+  `CREATE TABLE IF NOT EXISTS offer_fetch_runs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    zip_code text NOT NULL,
+    region_code text NOT NULL,
+    source text NOT NULL,
+    reference_date date NOT NULL,
+    fetched_raw_count integer NOT NULL DEFAULT 0,
+    matched_count integer NOT NULL DEFAULT 0,
+    upserted_count integer NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
 ];

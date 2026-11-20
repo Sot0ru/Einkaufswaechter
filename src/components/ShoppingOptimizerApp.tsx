@@ -4,6 +4,12 @@ import { useMemo, useState } from "react";
 import type { WeekWindow } from "@/lib/providers/demo-offers";
 import { parseBrochureText } from "@/lib/providers/text-importer";
 import {
+  POPULAR_GERMAN_ZIPS,
+  buildRegionalOffersForZip,
+  isValidGermanZip,
+  resolveZipRegion,
+} from "@/lib/providers/zip-offer-fetcher";
+import {
   CATEGORIES,
   CATEGORY_MAP,
   DEPARTMENTS,
@@ -40,6 +46,9 @@ export function ShoppingOptimizerApp({
 }: ShoppingOptimizerAppProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("compare");
   const [zipCode, setZipCode] = useState("10115");
+  const [activeZipCode, setActiveZipCode] = useState("10115");
+  const [zipSyncFeedback, setZipSyncFeedback] = useState<string | null>(null);
+  const [isSyncingZip, setIsSyncingZip] = useState(false);
   // Standardmäßig Samstag ausgewählt, damit auch Donnerstags-Angebote sichtbar sind
   const [shoppingDate, setShoppingDate] = useState<string>(weekWindow.saturday);
   const [secondStoreThresholdCents, setSecondStoreThresholdCents] = useState<number>(500);
@@ -168,6 +177,46 @@ export function ShoppingOptimizerApp({
     );
   };
 
+  const handleFetchZipOffers = async (targetZipRaw?: string) => {
+    const candidateZip = (targetZipRaw ?? zipCode).trim();
+    if (!isValidGermanZip(candidateZip)) {
+      setZipSyncFeedback("Bitte eine gültige 5-stellige deutsche Postleitzahl eingeben.");
+      return;
+    }
+
+    setZipCode(candidateZip);
+    setActiveZipCode(candidateZip);
+    const region = resolveZipRegion(candidateZip);
+
+    // 1. Sofortige deterministische Aktualisierung für verzögerungsfreie UI
+    const regionalOffers = buildRegionalOffersForZip(candidateZip, shoppingDate);
+    setOffers(regionalOffers);
+    setIsSyncingZip(true);
+
+    // 2. Hintergrund-Synchronisation mit der Datenbank über /api/v1/offers
+    try {
+      const res = await fetch(
+        `/api/v1/offers?zipCode=${encodeURIComponent(candidateZip)}&date=${encodeURIComponent(shoppingDate)}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.offers) && data.offers.length > 0) {
+          setOffers(data.offers);
+        }
+      }
+      setZipSyncFeedback(
+        `${regionalOffers.length} Wochenangebote für PLZ ${candidateZip} (${region.regionLabel} · ${region.aldiVariant}) synchronisiert.`,
+      );
+    } catch {
+      setZipSyncFeedback(
+        `${regionalOffers.length} regionale Wochenangebote für PLZ ${candidateZip} (${region.regionLabel} · ${region.aldiVariant}) geladen.`,
+      );
+    } finally {
+      setIsSyncingZip(false);
+    }
+  };
+
+  const currentRegion = useMemo(() => resolveZipRegion(activeZipCode), [activeZipCode]);
   const totalItemCount = basketItems.reduce((sum, i) => sum + i.quantity, 0);
   const split = optimization.bestTwoStoreSplit;
   const bestSingle = optimization.bestSingleStore;
@@ -195,7 +244,9 @@ export function ShoppingOptimizerApp({
               <span className="inline-flex items-center rounded-full bg-good-soft px-2.5 py-0.5 text-xs font-semibold text-good">
                 Wocheneinkaufs-Optimierer
               </span>
-              <span className="text-xs text-muted">7 Ketten · Kassen- & Grundpreis</span>
+              <span className="text-xs text-muted">
+                PLZ {activeZipCode} · {currentRegion.aldiVariant}
+              </span>
             </div>
             <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
               Einkaufswächter
@@ -243,11 +294,17 @@ export function ShoppingOptimizerApp({
             <label className="block text-xs font-semibold uppercase tracking-wider text-muted">
               1. Wann & Wo kaufst du ein?
             </label>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex items-center gap-1.5">
               <input
                 type="text"
                 value={zipCode}
-                onChange={(e) => setZipCode(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value.replace(/\D/g, "").slice(0, 5);
+                  setZipCode(next);
+                  if (next.length === 5) {
+                    void handleFetchZipOffers(next);
+                  }
+                }}
                 maxLength={5}
                 aria-label="Postleitzahl"
                 placeholder="PLZ"
@@ -279,9 +336,8 @@ export function ShoppingOptimizerApp({
               </div>
             </div>
             <p className="mt-1 text-xs text-muted">
-              {isWeekendShopping
-                ? "Berücksichtigt Wochenstart- UND Donnerstags-Angebote."
-                : "Berücksichtigt nur Angebote ab Montag (ohne Do.-Kracher)."}
+              {currentRegion.regionLabel} ·{" "}
+              {isWeekendShopping ? "inkl. Do.-Angebote" : "nur Mo.–Mi.-Angebote"}
             </p>
           </div>
 
@@ -946,6 +1002,77 @@ export function ShoppingOptimizerApp({
       {/* TAB 4: WOCHENANGEBOTE & PROSPEKT-IMPORTER */}
       {activeTab === "offers" && (
         <div className="grid gap-6 lg:grid-cols-12">
+          {/* Oben: Automatischer Hintergrund-Fetcher nach Postleitzahl */}
+          <section className="rounded-2xl border border-line bg-card p-5 shadow-xs lg:col-span-12">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-good-soft px-2.5 py-0.5 text-xs font-semibold text-good">
+                    Automatischer PLZ-Fetcher
+                  </span>
+                  <span className="font-mono text-xs text-muted">/api/cron/fetch-offers</span>
+                </div>
+                <h2 className="mt-1 text-lg font-bold">
+                  Regionale Wochenangebote nach Postleitzahl ({activeZipCode} ·{" "}
+                  {currentRegion.aldiVariant})
+                </h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  Erkennt automatisch die deutsche Handelsregion ({currentRegion.regionLabel}) inkl.
+                  Aldi-Äquator (Aldi Nord vs. Aldi Süd) und ordnet alle Angebote über den
+                  regelbasierten Matcher den {CATEGORIES.length} Standard-Kategorien zu.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={zipCode}
+                  onChange={(e) => setZipCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                  maxLength={5}
+                  placeholder="5-stellige PLZ"
+                  className="w-28 rounded-xl border border-line bg-paper px-3 py-2 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleFetchZipOffers(zipCode)}
+                  disabled={isSyncingZip}
+                  className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition hover:opacity-95 disabled:opacity-50"
+                >
+                  {isSyncingZip ? "Synchronisiere…" : "PLZ-Angebote abrufen"}
+                </button>
+              </div>
+            </div>
+
+            {/* Schnellwahl für die 5 deutschen Handelsregionen */}
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Handelsregion testen:
+              </span>
+              {POPULAR_GERMAN_ZIPS.map((item) => {
+                const isActive = activeZipCode === item.zipCode;
+                const info = resolveZipRegion(item.zipCode);
+                return (
+                  <button
+                    key={item.zipCode}
+                    type="button"
+                    onClick={() => void handleFetchZipOffers(item.zipCode)}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                      isActive
+                        ? "border-accent bg-accent text-accent-ink"
+                        : "border-line bg-paper text-muted hover:text-ink"
+                    }`}
+                  >
+                    {item.zipCode} {item.city} ({info.aldiVariant})
+                  </button>
+                );
+              })}
+            </div>
+
+            {zipSyncFeedback && (
+              <p className="mt-2.5 text-xs font-medium text-good">✓ {zipSyncFeedback}</p>
+            )}
+          </section>
+
           {/* Links: Regelbasierter Prospekt-Text-Tester */}
           <section className="rounded-2xl border border-line bg-card p-5 shadow-xs lg:col-span-6">
             <h2 className="text-lg font-bold">Prospekt-Zeilen testen & importieren</h2>

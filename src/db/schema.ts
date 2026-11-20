@@ -88,3 +88,15 @@ export const shoppingListItems = pgTable("shopping_list_items", {
   quantity: integer("quantity").default(1).notNull(),
   checked: boolean("checked").default(false).notNull(),
 });
+
+export const offerFetchRuns = pgTable("offer_fetch_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  zipCode: text("zip_code").notNull(),
+  regionCode: text("region_code").notNull(),
+  source: text("source").notNull(),
+  referenceDate: date("reference_date", { mode: "string" }).notNull(),
+  fetchedRawCount: integer("fetched_raw_count").default(0).notNull(),
+  matchedCount: integer("matched_count").default(0).notNull(),
+  upsertedCount: integer("upserted_count").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
