@@ -1,3 +1,5 @@
+import { buildExtendedCategories } from "./catalog-extended";
+
 export type StoreId = "lidl" | "aldi" | "rewe" | "edeka" | "kaufland" | "netto" | "penny";
 
 export interface StoreDefinition {
@@ -800,7 +802,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     unit: "stueck",
     standardAmount: 4,
     includeKeywords: ["laugenbrezeln", "laugenstangen", "laugenbrötchen"],
-    excludeKeywords: ["salzbrezeln", "cracker", "chips"],
+    excludeKeywords: ["salzbrezeln", "cracker", "chips", "tiefgefroren", "tk"],
     minPlausiblePriceCents: 89,
     maxPlausiblePriceCents: 279,
     defaultBasePrices: storeBasePrices("backwaren", "Laugenbrezeln 4er", 149, 159),
@@ -852,7 +854,8 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
       "buttertoast",
       "buttercroissant",
       "kakaobutter",
-      "kräuterbutter-baguette",
+      "kräuterbutter",
+      "knoblauchbutter",
       "butterschmalz",
       "butterzopf",
     ],
@@ -887,6 +890,11 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
       "fettarme milch",
       "1,5 %",
       "1,5%",
+      "bio-vollmilch",
+      "bio vollmilch",
+      "bio frischmilch",
+      "bio weidemilch",
+      "laktosefrei",
     ],
     minPlausiblePriceCents: 69,
     maxPlausiblePriceCents: 189,
@@ -929,7 +937,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     unit: "stueck",
     standardAmount: 10,
     includeKeywords: ["frische eier", "bodenhaltung", "freilandeier", "eier aus freilandhaltung", "10 eier"],
-    excludeKeywords: ["eierlikör", "eiernudeln", "eierspätzle", "schokoeier", "eiersalat", "überraschungsei"],
+    excludeKeywords: ["eierlikör", "eiernudeln", "eierspätzle", "schokoeier", "eiersalat", "überraschungsei", "bio-eier", "bio eier"],
     minPlausiblePriceCents: 139,
     maxPlausiblePriceCents: 359,
     defaultBasePrices: uniformEigenmarke(199, {
@@ -1314,7 +1322,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     unit: "g",
     standardAmount: 500,
     includeKeywords: ["hackfleisch", "rinderhackfleisch", "rinderhack", "gemischtes hack"],
-    excludeKeywords: ["hackfleischsauce", "fix für hackfleisch", "gewürz", "veganes hack", "mühlen hack"],
+    excludeKeywords: ["hackfleischsauce", "fix für hackfleisch", "gewürz", "veganes hack", "mühlen hack", "bio-rinderhack", "bio rinderhack", "bio hackfleisch"],
     minPlausiblePriceCents: 249,
     maxPlausiblePriceCents: 699,
     defaultBasePrices: uniformEigenmarke(
@@ -1668,7 +1676,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     unit: "g",
     standardAmount: 500,
     includeKeywords: ["spaghetti", "fusilli", "penne rigate", "nudeln", "maccheroni", "barilla", "birkel"],
-    excludeKeywords: ["fertiggericht", "nudelgericht", "nudelsalat", "instant", "ramen", "dosengericht", "pesto", "schupfnudeln"],
+    excludeKeywords: ["fertiggericht", "nudelgericht", "nudelsalat", "instant", "ramen", "dosengericht", "pesto", "schupfnudeln", "vollkorn", "integrale", "lasagne"],
     minPlausiblePriceCents: 49,
     maxPlausiblePriceCents: 249,
     defaultBasePrices: uniformEigenmarke(79, {
@@ -2706,7 +2714,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     unit: "ml",
     standardAmount: 500,
     includeKeywords: ["pilsener", "krombacher", "bitburger", "veltins", "warsteiner", "beck's", "paulaner weißbier", "perlenbacher"],
-    excludeKeywords: ["bierschinken", "bierhefe"],
+    excludeKeywords: ["bierschinken", "bierhefe", "alkoholfrei", "0,0%", "0,0 %"],
     minPlausiblePriceCents: 39,
     maxPlausiblePriceCents: 159,
     defaultBasePrices: storeBasePrices("getraenke", "Premium Pils 0,5 L", 49, 55, {
@@ -2999,6 +3007,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
       aldi: "Topic",
     }),
   },
+  ...buildExtendedCategories(storeBasePrices),
 ] as const;
 
 export const CATEGORY_MAP: Record<string, CategoryDefinition> = Object.fromEntries(

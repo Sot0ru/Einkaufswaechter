@@ -19,6 +19,7 @@ const CronFetchRequestSchema = z.object({
     .optional(),
   stores: z.array(z.enum(validStoreIds)).optional(),
   allRegions: z.boolean().optional().default(false),
+  enableLiveScraping: z.boolean().optional(),
 });
 
 const todayInVienna = (): string =>
@@ -86,6 +87,9 @@ export async function GET(request: Request) {
     const zipsParam = url.searchParams.get("zipCodes");
     const dateParam = url.searchParams.get("referenceDate") ?? todayInVienna();
     const allRegions = url.searchParams.get("allRegions") === "true";
+    const liveParam = url.searchParams.get("live");
+    const enableLiveScraping =
+      liveParam === "true" ? true : liveParam === "false" ? false : undefined;
 
     const zipCodesFromQuery = zipsParam
       ? zipsParam
@@ -113,6 +117,7 @@ export async function GET(request: Request) {
       const syncResult = await syncOffersForZipCode(db, {
         zipCode: zip,
         referenceDate: dateParam,
+        enableLiveScraping,
       });
       runs.push({
         zipCode: syncResult.zipCode,
@@ -121,6 +126,9 @@ export async function GET(request: Request) {
         fetchedRawCount: syncResult.fetchedRawCount,
         matchedCount: syncResult.matchedCount,
         upsertedCount: syncResult.upsertedCount,
+        liveChainCount: syncResult.liveChainCount,
+        liveScrapedOfferCount: syncResult.liveScrapedOfferCount,
+        chainStatuses: syncResult.chainStatuses,
         activeOfferCount: syncResult.offers.length,
         syncedAt: syncResult.syncedAt,
       });
@@ -181,6 +189,7 @@ export async function POST(request: Request) {
         zipCode: zip,
         referenceDate,
         stores: parsed.data.stores,
+        enableLiveScraping: parsed.data.enableLiveScraping,
       });
       runs.push({
         zipCode: syncResult.zipCode,
@@ -189,6 +198,9 @@ export async function POST(request: Request) {
         fetchedRawCount: syncResult.fetchedRawCount,
         matchedCount: syncResult.matchedCount,
         upsertedCount: syncResult.upsertedCount,
+        liveChainCount: syncResult.liveChainCount,
+        liveScrapedOfferCount: syncResult.liveScrapedOfferCount,
+        chainStatuses: syncResult.chainStatuses,
         activeOfferCount: syncResult.offers.length,
         syncedAt: syncResult.syncedAt,
       });

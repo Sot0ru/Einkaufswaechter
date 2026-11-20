@@ -25,8 +25,9 @@
 
 ## Ausbaustufe 2: Ausbau Katalog & Automatisierter PLZ-Abruf
 
-- [x] Erweiterung des Standard-Katalogs von den wichtigsten 20 Kern-Kategorien auf 172 normierte Alltags-Kategorien über alle 8 Abteilungen (inkl. Wortgrenzen-Schutz und vollständiger Matcher-Selbsttests).
-- [x] Hintergrund-Cronjob (`/api/cron/fetch-offers`) & PLZ-API (`/api/v1/offers`) für automatisierten wöchentlichen Angebots-Abruf nach Postleitzahl (inkl. 5 deutscher Handelsregionen, Aldi-Äquator Nord/Süd, externem JSON-Feed-Adapter mit Offline-Fallback und `offer_fetch_runs`-Protokollierung).
+- [x] Erweiterung des Standard-Katalogs von den wichtigsten 20 Kern-Kategorien auf **240 normierte Alltags-Kategorien** über alle 8 Abteilungen (inkl. Bio-, Saison-, Vegan-, Baby- & Tierbedarf-Artikeln, Wortgrenzen-Schutz und vollständiger Matcher-Selbsttests).
+- [x] Hintergrund-Cronjob (`/api/cron/fetch-offers?live=true`) & PLZ-API (`/api/v1/offers`) für automatisierten wöchentlichen Angebots-Abruf nach Postleitzahl (inkl. 5 deutscher Handelsregionen, Aldi-Äquator Nord/Süd, externem JSON-Feed-Adapter mit Offline-Fallback und `offer_fetch_runs`-Protokollierung).
+- [x] **7-Ketten Live-Scraper-Engine (`src/lib/providers/chain-scrapers.ts`, `/api/v1/offers/scrape`):** Strukturierte Extraktion aus `schema.org` JSON-LD, `__NEXT_DATA__`/Embedded-JSON und HTML-Angebotskacheln für Lidl, Aldi (Nord/Süd), Rewe, Edeka, Kaufland, Netto & Penny – mit strikter Anti-Bot-/CAPTCHA-Respektierung und nahtlosem Regional-Fallback.
 - [x] Persistente Einkaufslisten (`/api/v1/lists`) & eigene 1-Klick-Basispreis-Korrektur im Laden (`/api/v1/base-prices`).
 - [x] **Kassenbon / E-Bon Crowdsourcing (`/api/v1/receipts/import`):** Deterministischer Kassenbon-Parser (Kette, PLZ, Wiegeware `kg × €/kg`, Mehrfachmengen, Rabatt-/App-Coupon-Zeilen, Pfand-Filter) + selbstlernendes Kürzel-Wörterbuch (`receipt_aliases`) und `receipt_observations`.
 

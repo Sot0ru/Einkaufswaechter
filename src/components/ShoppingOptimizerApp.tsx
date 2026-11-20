@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ChainScrapeStatus } from "@/lib/providers/chain-scrapers";
 import type { WeekWindow } from "@/lib/providers/demo-offers";
 import {
   SAMPLE_RECEIPT_TEXT,
@@ -72,6 +73,8 @@ export function ShoppingOptimizerApp({
   const [activeZipCode, setActiveZipCode] = useState(initialZipCode);
   const [zipSyncFeedback, setZipSyncFeedback] = useState<string | null>(null);
   const [isSyncingZip, setIsSyncingZip] = useState(false);
+  const [isLiveScraping, setIsLiveScraping] = useState(false);
+  const [chainScrapeStatuses, setChainScrapeStatuses] = useState<ChainScrapeStatus[]>([]);
   // Standardmäßig Samstag ausgewählt, damit auch Donnerstags-Angebote sichtbar sind
   const [shoppingDate, setShoppingDate] = useState<string>(weekWindow.saturday);
   const [secondStoreThresholdCents, setSecondStoreThresholdCents] = useState<number>(500);
@@ -448,6 +451,52 @@ export function ShoppingOptimizerApp({
       );
     } finally {
       setIsSyncingZip(false);
+    }
+  };
+
+  const handleTriggerLiveScrape = async () => {
+    const candidateZip = zipCode.trim();
+    if (!isValidGermanZip(candidateZip)) {
+      setZipSyncFeedback("Bitte eine gültige 5-stellige deutsche Postleitzahl eingeben.");
+      return;
+    }
+
+    setIsLiveScraping(true);
+    setZipSyncFeedback(null);
+    try {
+      const res = await fetch("/api/v1/offers/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "live_chains",
+          zipCode: candidateZip,
+          referenceDate: shoppingDate,
+          stores: enabledStores,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.offers) && data.offers.length > 0) {
+          setOffers(data.offers);
+        }
+        if (Array.isArray(data.chainStatuses)) {
+          setChainScrapeStatuses(data.chainStatuses);
+        }
+        setActiveZipCode(candidateZip);
+        setZipSyncFeedback(
+          `7-Ketten-Live-Scraping abgeschlossen: ${data.liveChainCount ?? 0} Ketten live extrahiert (${data.liveScrapedOfferCount ?? 0} Live-Treffer), insgesamt ${data.offers?.length ?? offers.length} aktive Angebote für PLZ ${candidateZip}.`,
+        );
+        return;
+      }
+      setZipSyncFeedback(
+        "Live-Scraping erfordert einen laufenden Backend-Server (/api/v1/offers/scrape) – Regional-Katalog bleibt aktiv.",
+      );
+    } catch {
+      setZipSyncFeedback(
+        "Offline-/PWA-Modus erkannt: Live-Scraping läuft über das Server-Backend (/api/cron/fetch-offers?live=true), lokal bleibt der Regional-Katalog aktiv.",
+      );
+    } finally {
+      setIsLiveScraping(false);
     }
   };
 
@@ -1529,7 +1578,7 @@ export function ShoppingOptimizerApp({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="text"
                   value={zipCode}
@@ -1541,10 +1590,18 @@ export function ShoppingOptimizerApp({
                 <button
                   type="button"
                   onClick={() => void handleFetchZipOffers(zipCode)}
-                  disabled={isSyncingZip}
+                  disabled={isSyncingZip || isLiveScraping}
                   className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition hover:opacity-95 disabled:opacity-50"
                 >
                   {isSyncingZip ? "Synchronisiere…" : "PLZ-Angebote abrufen"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleTriggerLiveScrape()}
+                  disabled={isLiveScraping || isSyncingZip}
+                  className="rounded-xl border border-accent bg-paper px-3.5 py-2 text-sm font-semibold text-accent transition hover:bg-good-soft/40 disabled:opacity-50"
+                >
+                  {isLiveScraping ? "Scrape 7 Ketten…" : "🌐 7 Ketten live scrapen"}
                 </button>
               </div>
             </div>
@@ -1576,6 +1633,39 @@ export function ShoppingOptimizerApp({
 
             {zipSyncFeedback && (
               <p className="mt-2.5 text-xs font-medium text-good">✓ {zipSyncFeedback}</p>
+            )}
+
+            {chainScrapeStatuses.length > 0 && (
+              <div className="mt-3 grid gap-2 border-t border-line pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                {chainScrapeStatuses.map((cs) => (
+                  <div
+                    key={cs.storeId}
+                    className={`rounded-xl border px-3 py-2 text-xs ${
+                      cs.status === "live_scraped"
+                        ? "border-good/60 bg-good-soft/30"
+                        : "border-line bg-paper"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 font-semibold">
+                      <span>{cs.storeName}</span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                          cs.status === "live_scraped"
+                            ? "bg-good-soft text-good"
+                            : "bg-warn-soft text-warn-ink"
+                        }`}
+                      >
+                        {cs.status === "live_scraped"
+                          ? `LIVE (${cs.matchedCount})`
+                          : cs.status === "blocked"
+                            ? "Fallback (Bot-Schutz)"
+                            : "Fallback"}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted">{cs.message}</p>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
 

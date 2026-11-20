@@ -9,9 +9,9 @@ import {
 } from "@/lib/rules/matcher";
 
 describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
-  it("umfasst 150 bis 200 valide, eindeutig konfigurierte Alltags-Kategorien über alle 8 Abteilungen", () => {
-    expect(CATEGORIES.length).toBeGreaterThanOrEqual(150);
-    expect(CATEGORIES.length).toBeLessThanOrEqual(200);
+  it("umfasst mindestens 230 valide, eindeutig konfigurierte Alltags-Kategorien über alle 8 Abteilungen", () => {
+    expect(CATEGORIES.length).toBeGreaterThanOrEqual(230);
+    expect(CATEGORIES.length).toBeLessThanOrEqual(300);
 
     const seenIds = new Set<string>();
     for (const cat of CATEGORIES) {
@@ -47,11 +47,11 @@ describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
 
     for (const dept of DEPARTMENTS) {
       const countInDept = CATEGORIES.filter((c) => c.department === dept.id).length;
-      expect(countInDept).toBeGreaterThanOrEqual(12);
+      expect(countInDept).toBeGreaterThanOrEqual(18);
     }
   });
 
-  it("ordnet für jede der ~170 Kategorien alle hinterlegten includeKeywords deterministisch der richtigen Kategorie zu", () => {
+  it("ordnet für jede der 240 Kategorien alle hinterlegten includeKeywords deterministisch der richtigen Kategorie zu", () => {
     for (const cat of CATEGORIES) {
       const unitLabel =
         cat.unit === "g" ? "g" : cat.unit === "ml" ? "ml" : "Stück";
@@ -101,19 +101,21 @@ describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
     });
     expect(butterkaese?.categoryId).not.toBe("butter_250g");
 
+    // Erdnussbutter hat jetzt ihre eigene Kategorie und landet niemals bei butter_250g
     const erdnussbutter = matchOfferToCategory({
       title: "American Erdnussbutter Creamy",
-      description: "250-g-Glas",
+      description: "350-g-Glas",
       priceCents: 179,
     });
-    expect(erdnussbutter).toBeNull();
+    expect(erdnussbutter?.categoryId).toBe("erdnussbutter_350g");
 
+    // Buttermilch hat jetzt ihre eigene Kategorie und landet niemals bei butter_250g oder vollmilch_1l
     const buttermilch = matchOfferToCategory({
       title: "Müller Reine Buttermilch",
       description: "500-ml-Becher",
-      priceCents: 79,
+      priceCents: 69,
     });
-    expect(buttermilch).toBeNull();
+    expect(buttermilch?.categoryId).toBe("buttermilch_500ml");
   });
 
   it("trennt verwandte Produktgruppen (Milch, Tomaten, Kartoffeln, Kaffee) trennscharf", () => {
