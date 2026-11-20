@@ -2,6 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { WeekWindow } from "@/lib/providers/demo-offers";
+import {
+  SAMPLE_RECEIPT_TEXT,
+  buildOfferRecordFromReceiptItem,
+  normalizeReceiptLabel,
+  parseReceiptText,
+  type ReceiptAliasEntry,
+} from "@/lib/providers/receipt-importer";
 import { parseBrochureText } from "@/lib/providers/text-importer";
 import {
   POPULAR_GERMAN_ZIPS,
@@ -36,6 +43,7 @@ export interface ShoppingOptimizerAppProps {
   weekWindow: WeekWindow;
   initialCustomBasePrices?: CustomBasePricesMap;
   initialSavedLists?: SavedShoppingList[];
+  initialReceiptAliases?: ReceiptAliasEntry[];
   initialBasketItems?: BasketItemInput[];
   initialZipCode?: string;
   initialCheckedKeys?: Record<string, boolean>;
@@ -54,6 +62,7 @@ export function ShoppingOptimizerApp({
   weekWindow,
   initialCustomBasePrices = {},
   initialSavedLists = [],
+  initialReceiptAliases = [],
   initialBasketItems,
   initialZipCode = "10115",
   initialCheckedKeys = {},
@@ -97,6 +106,17 @@ export function ShoppingOptimizerApp({
   const [listNameInput, setListNameInput] = useState("Mein Wocheneinkauf");
   const [listSaveFeedback, setListSaveFeedback] = useState<string | null>(null);
 
+  // Kassenbon / E-Bon Crowdsourcing
+  const [receiptAliases, setReceiptAliases] =
+    useState<ReceiptAliasEntry[]>(initialReceiptAliases);
+  const [receiptInput, setReceiptInput] = useState(SAMPLE_RECEIPT_TEXT);
+  const [receiptFallbackStoreId, setReceiptFallbackStoreId] = useState<StoreId>("lidl");
+  const [manualReceiptAssignments, setManualReceiptAssignments] = useState<
+    Record<string, string>
+  >({});
+  const [receiptFeedback, setReceiptFeedback] = useState<string | null>(null);
+  const [isImportingReceipt, setIsImportingReceipt] = useState(false);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -110,6 +130,7 @@ export function ShoppingOptimizerApp({
           checkedKeys,
           customBasePrices,
           savedLists,
+          receiptAliases,
         }),
       );
     } catch {
@@ -124,6 +145,7 @@ export function ShoppingOptimizerApp({
     checkedKeys,
     customBasePrices,
     savedLists,
+    receiptAliases,
   ]);
 
   // Für den Prospekt-Tester
@@ -166,6 +188,16 @@ export function ShoppingOptimizerApp({
         referenceDate: shoppingDate,
       }),
     [brochureInput, importStoreId, shoppingDate],
+  );
+
+  const receiptPreview = useMemo(
+    () =>
+      parseReceiptText({
+        text: receiptInput,
+        fallbackStoreId: receiptFallbackStoreId,
+        learnedAliases: receiptAliases,
+      }),
+    [receiptInput, receiptFallbackStoreId, receiptAliases],
   );
 
   const toggleStore = (storeId: StoreId) => {
@@ -228,6 +260,155 @@ export function ShoppingOptimizerApp({
     });
     setImportFeedback(
       `${matched.length} Angebot(e) für ${STORE_MAP[importStoreId].shortName} übernommen und live in die Preis-Optimierung eingerechnet!`,
+    );
+  };
+
+  const handleApplyReceiptImport = async () => {
+    const storeId = receiptPreview.detectedStoreId ?? receiptFallbackStoreId;
+    const effectiveZip =
+      receiptPreview.detectedZipCode && isValidGermanZip(receiptPreview.detectedZipCode)
+        ? receiptPreview.detectedZipCode
+        : activeZipCode;
+    const effectiveDate = receiptPreview.detectedDate ?? shoppingDate;
+
+    const confirmedItems = receiptPreview.items
+      .map((item) => {
+        const manualCatId = manualReceiptAssignments[item.aliasNormalized];
+        const categoryId = manualCatId || item.categoryId;
+        if (!categoryId || !CATEGORY_MAP[categoryId]) return null;
+        return {
+          rawLabel: item.rawLabel,
+          categoryId,
+          regularPriceCents: item.regularPriceCents,
+          effectivePriceCents: item.effectivePriceCents,
+          isOffer: item.isOffer,
+          usedLoyaltyApp: item.usedLoyaltyApp,
+          updateBasePrice: item.suggestBasePriceUpdate || (item.isStoreBrand && !item.isOffer),
+          learnAlias: Boolean(manualCatId) || !item.matched,
+          packageAmount: item.packageAmount,
+          packageUnit: item.packageUnit,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry != null);
+
+    if (confirmedItems.length === 0) {
+      setReceiptFeedback(
+        "Keine zugeordneten Kassenbon-Positionen vorhanden. Ordne unbekannte Kürzel per Auswahlfeld zu.",
+      );
+      return;
+    }
+
+    setIsImportingReceipt(true);
+
+    // 1. Sofortiges Live-Update im Client-State (funktioniert auch offline in der Mobile-PWA)
+    let localBaseUpdates = 0;
+    const localNewOffers: OfferRecord[] = [];
+    const localNewAliases: ReceiptAliasEntry[] = [];
+
+    setCustomBasePrices((prev) => {
+      const next: CustomBasePricesMap = { ...prev };
+      for (const item of confirmedItems) {
+        if (!item.updateBasePrice) continue;
+        const cat = CATEGORY_MAP[item.categoryId];
+        if (!cat) continue;
+        next[item.categoryId] = {
+          ...(next[item.categoryId] ?? {}),
+          [storeId]: {
+            priceCents: item.regularPriceCents,
+            productLabel: cat.defaultBasePrices[storeId].productLabel,
+          },
+        };
+        localBaseUpdates += 1;
+      }
+      return next;
+    });
+
+    for (const item of confirmedItems) {
+      if (item.isOffer) {
+        const offer = buildOfferRecordFromReceiptItem({
+          storeId,
+          categoryId: item.categoryId,
+          rawLabel: item.rawLabel,
+          regularPriceCents: item.regularPriceCents,
+          effectivePriceCents: item.effectivePriceCents,
+          usedLoyaltyApp: item.usedLoyaltyApp,
+          packageAmount: item.packageAmount,
+          packageUnit: item.packageUnit,
+          receiptDate: effectiveDate,
+        });
+        if (offer) localNewOffers.push(offer);
+      }
+
+      if (item.learnAlias) {
+        const norm = normalizeReceiptLabel(item.rawLabel);
+        if (norm.length >= 3) {
+          localNewAliases.push({
+            aliasNormalized: norm,
+            storeId,
+            categoryId: item.categoryId,
+            sampleLabel: item.rawLabel,
+            hitCount: 1,
+          });
+        }
+      }
+    }
+
+    if (localNewOffers.length > 0) {
+      setOffers((prev) => {
+        const filtered = prev.filter(
+          (ex) =>
+            !localNewOffers.some(
+              (n) => n.storeId === ex.storeId && n.categoryId === ex.categoryId,
+            ),
+        );
+        return [...filtered, ...localNewOffers];
+      });
+    }
+
+    if (localNewAliases.length > 0) {
+      setReceiptAliases((prev) => {
+        const map = new Map(prev.map((a) => [a.aliasNormalized, a]));
+        for (const alias of localNewAliases) {
+          const existing = map.get(alias.aliasNormalized);
+          map.set(alias.aliasNormalized, {
+            ...alias,
+            hitCount: (existing?.hitCount ?? 0) + 1,
+          });
+        }
+        return Array.from(map.values());
+      });
+      setManualReceiptAssignments({});
+    }
+
+    // 2. Hintergrund-Persistierung über /api/v1/receipts/import
+    try {
+      const res = await fetch("/api/v1/receipts/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId,
+          zipCode: effectiveZip,
+          receiptDate: effectiveDate,
+          items: confirmedItems,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.customBasePrices) setCustomBasePrices(data.customBasePrices);
+        if (Array.isArray(data.aliases)) setReceiptAliases(data.aliases);
+        setReceiptFeedback(
+          `Kassenbon (${STORE_MAP[storeId].shortName}, PLZ ${effectiveZip}) gespeichert: ${data.observationsInserted} Positionen verifiziert, ${data.basePricesUpdated} Basispreise aktualisiert, ${data.offersUpserted} Angebote übernommen, ${data.aliasesLearned} neue Kürzel gelernt!`,
+        );
+        return;
+      }
+    } catch {
+      // Offline / PWA-Fallback greift unten
+    } finally {
+      setIsImportingReceipt(false);
+    }
+
+    setReceiptFeedback(
+      `Kassenbon (${STORE_MAP[storeId].shortName}, PLZ ${effectiveZip}) übernommen: ${confirmedItems.length} Positionen verifiziert, ${localBaseUpdates} Basispreise aktualisiert, ${localNewOffers.length} Angebote aktiv, ${localNewAliases.length} neue Kürzel gelernt!`,
     );
   };
 
@@ -1396,6 +1577,200 @@ export function ShoppingOptimizerApp({
             {zipSyncFeedback && (
               <p className="mt-2.5 text-xs font-medium text-good">✓ {zipSyncFeedback}</p>
             )}
+          </section>
+
+          {/* Kassenbon / E-Bon Crowdsourcing (Basispreise verifizieren & Kürzel lernen) */}
+          <section className="rounded-2xl border border-line bg-card p-5 shadow-xs lg:col-span-12">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-good-soft px-2.5 py-0.5 text-xs font-semibold text-good">
+                    Kassenbon / E-Bon Crowdsourcing
+                  </span>
+                  <span className="text-xs text-muted">
+                    {receiptAliases.length} gelernte Bon-Kürzel aktiv
+                  </span>
+                </div>
+                <h2 className="mt-1 text-lg font-bold">
+                  Echten Kassenbon / E-Bon einfügen → Basispreise & Angebote verifizieren
+                </h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  Kopiere den Text aus deinem digitalen Kassenbon (Lidl Plus, Rewe eBon, Kaufland,
+                  Edeka, Aldi, Netto, Penny). Erkennt automatisch Kette, PLZ, Wiegeware (
+                  <code>kg × €/kg</code>), Mehrfachmengen (<code>2 ×</code>), Rabatt-Zeilen und
+                  filtert Pfand/Summe heraus. Unbekannte Kürzel lassen sich mit 1 Klick dauerhaft
+                  lernen.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-muted">Fallback-Kette:</label>
+                <select
+                  value={receiptPreview.detectedStoreId ?? receiptFallbackStoreId}
+                  onChange={(e) => setReceiptFallbackStoreId(e.target.value as StoreId)}
+                  className="rounded-lg border border-line bg-paper px-2.5 py-1.5 text-xs font-semibold"
+                >
+                  {STORES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-5 lg:grid-cols-12">
+              <div className="lg:col-span-5">
+                <textarea
+                  value={receiptInput}
+                  onChange={(e) => setReceiptInput(e.target.value)}
+                  rows={12}
+                  aria-label="Kassenbon-Text einfügen"
+                  className="w-full rounded-xl border border-line bg-paper p-3 font-mono text-xs"
+                  placeholder="E-Bon Text aus Lidl Plus, Rewe eBon, Kaufland oder Foto-OCR einfügen…"
+                />
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted">
+                  <span className="rounded-md border border-line bg-paper px-2 py-0.5">
+                    Kette:{" "}
+                    <strong className="text-ink">
+                      {STORE_MAP[receiptPreview.detectedStoreId ?? receiptFallbackStoreId].shortName}
+                    </strong>
+                  </span>
+                  <span className="rounded-md border border-line bg-paper px-2 py-0.5">
+                    PLZ:{" "}
+                    <strong className="font-mono text-ink">
+                      {receiptPreview.detectedZipCode ?? activeZipCode}
+                    </strong>
+                  </span>
+                  <span className="rounded-md border border-line bg-paper px-2 py-0.5">
+                    Datum:{" "}
+                    <strong className="font-mono text-ink">
+                      {receiptPreview.detectedDate ?? shoppingDate}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2.5 lg:col-span-7">
+                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted">
+                  <span>
+                    Erkannte Kassenbon-Positionen (
+                    {
+                      receiptPreview.items.filter(
+                        (i) => i.matched || Boolean(manualReceiptAssignments[i.aliasNormalized]),
+                      ).length
+                    }
+                    /{receiptPreview.items.length} zugeordnet)
+                  </span>
+                  <span>{receiptPreview.skippedLines.length} Meta-/Pfand-Zeilen gefiltert</span>
+                </div>
+
+                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                  {receiptPreview.items.map((item) => {
+                    const assignedCatId =
+                      manualReceiptAssignments[item.aliasNormalized] || item.categoryId || "";
+                    const assignedCat = assignedCatId ? CATEGORY_MAP[assignedCatId] : null;
+                    const isResolved = Boolean(assignedCat);
+
+                    return (
+                      <div
+                        key={`${item.lineIndex}-${item.aliasNormalized}`}
+                        className={`rounded-xl border p-2.5 text-xs ${
+                          isResolved
+                            ? "border-good/50 bg-good-soft/25"
+                            : "border-warn-ink/30 bg-warn-soft/30"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-mono text-[11px] font-semibold">
+                              {item.quantity > 1 ? `${item.quantity}× ` : ""}
+                              {item.rawLabel}
+                              {item.isWeighedItem && (
+                                <span className="ml-1.5 rounded bg-card px-1.5 py-0.5 text-[10px] font-normal text-muted">
+                                  Wiegeware → €/kg normiert
+                                </span>
+                              )}
+                            </div>
+                            {isResolved && assignedCat ? (
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-good">
+                                <span className="font-semibold">
+                                  ✓ {assignedCat.name} ({assignedCat.subtitle})
+                                </span>
+                                {item.matchedVia === "learned_alias" && (
+                                  <span className="rounded bg-card px-1.5 py-0.5 text-[10px] font-semibold">
+                                    Gelerntes Kürzel
+                                  </span>
+                                )}
+                                {item.suggestBasePriceUpdate && (
+                                  <span className="rounded bg-card px-1.5 py-0.5 text-[10px] font-semibold text-ink">
+                                    Basispreis: {formatEuroCents(item.regularPriceCents)}
+                                  </span>
+                                )}
+                                {item.isOffer && (
+                                  <span className="rounded bg-good-soft px-1.5 py-0.5 text-[10px] font-bold">
+                                    {item.usedLoyaltyApp ? "App-Angebot" : "Aktionspreis"}:{" "}
+                                    {formatEuroCents(item.effectivePriceCents)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                <span className="font-medium text-warn-ink">
+                                  Unbekanntes Kürzel →
+                                </span>
+                                <select
+                                  value={manualReceiptAssignments[item.aliasNormalized] ?? ""}
+                                  onChange={(e) =>
+                                    setManualReceiptAssignments((prev) => ({
+                                      ...prev,
+                                      [item.aliasNormalized]: e.target.value,
+                                    }))
+                                  }
+                                  aria-label={`Kategorie für ${item.rawLabel} zuordnen`}
+                                  className="max-w-xs rounded-lg border border-line bg-card px-2 py-1 text-xs"
+                                >
+                                  <option value="">Kategorie wählen & dauerhaft lernen…</option>
+                                  {CATEGORIES.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name} ({c.subtitle})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="text-right font-mono">
+                            <div className="font-bold">
+                              {formatEuroCents(item.effectivePriceCents)}
+                            </div>
+                            {item.discountCents > 0 && (
+                              <div className="text-[10px] text-muted line-through">
+                                {formatEuroCents(item.regularPriceCents)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleApplyReceiptImport()}
+                  disabled={isImportingReceipt}
+                  className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-ink transition hover:opacity-95 disabled:opacity-50"
+                >
+                  {isImportingReceipt
+                    ? "Speichere Kassenbon-Daten…"
+                    : "Verifizierte Kassenbon-Preise & gelernte Kürzel übernehmen"}
+                </button>
+                {receiptFeedback && (
+                  <p className="text-xs font-medium text-good">✓ {receiptFeedback}</p>
+                )}
+              </div>
+            </div>
           </section>
 
           {/* Links: Regelbasierter Prospekt-Text-Tester */}

@@ -4,6 +4,7 @@ import {
   ShoppingOptimizerApp,
 } from "@/components/ShoppingOptimizerApp";
 import { getWeekWindowForDate } from "@/lib/providers/demo-offers";
+import type { ReceiptAliasEntry } from "@/lib/providers/receipt-importer";
 import { buildRegionalOffersForZip } from "@/lib/providers/zip-offer-fetcher";
 import { SHOPPING_PRESETS } from "@/lib/rules/catalog";
 import type { BasketItemInput } from "@/lib/rules/optimizer";
@@ -24,6 +25,7 @@ interface PersistedMobileState {
   checkedKeys?: Record<string, boolean>;
   customBasePrices?: CustomBasePricesMap;
   savedLists?: SavedShoppingList[];
+  receiptAliases?: ReceiptAliasEntry[];
 }
 
 const loadStoredState = (): PersistedMobileState => {
@@ -77,6 +79,7 @@ const bootstrap = () => {
       initialBasketItems={stored.basketItems}
       initialCheckedKeys={stored.checkedKeys}
       initialCustomBasePrices={stored.customBasePrices}
+      initialReceiptAliases={stored.receiptAliases}
       initialSavedLists={
         stored.savedLists && stored.savedLists.length > 0 ? stored.savedLists : defaultLists
       }

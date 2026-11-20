@@ -75,4 +75,23 @@ export const SCHEMA_STATEMENTS = [
     upserted_count integer NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
+  `CREATE TABLE IF NOT EXISTS receipt_aliases (
+    alias_normalized text PRIMARY KEY,
+    store_id text,
+    category_id text NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    sample_label text NOT NULL,
+    hit_count integer NOT NULL DEFAULT 1,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS receipt_observations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id text NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    zip_code text NOT NULL DEFAULT '10115',
+    category_id text NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    raw_label text NOT NULL,
+    price_cents integer NOT NULL,
+    is_offer boolean NOT NULL DEFAULT false,
+    receipt_date date NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
 ];

@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { ensureCatalogAndDemoOffers } from "@/db/seed";
 import { getWeekWindowForDate } from "@/lib/providers/demo-offers";
 import { getCustomBasePricesMap } from "@/lib/services/base-prices";
+import { listReceiptAliases } from "@/lib/services/receipts";
 import { listSavedShoppingLists } from "@/lib/services/shopping-lists";
 
 const todayInVienna = (): string => {
@@ -22,9 +23,10 @@ async function OptimizerLoader() {
   const weekWindow = getWeekWindowForDate(today);
   const db = await getDb();
   const initialOffers = await ensureCatalogAndDemoOffers(db, today);
-  const [initialCustomBasePrices, initialSavedLists] = await Promise.all([
+  const [initialCustomBasePrices, initialSavedLists, initialReceiptAliases] = await Promise.all([
     getCustomBasePricesMap(db),
     listSavedShoppingLists(db),
+    listReceiptAliases(db),
   ]);
 
   return (
@@ -33,6 +35,7 @@ async function OptimizerLoader() {
       weekWindow={weekWindow}
       initialCustomBasePrices={initialCustomBasePrices}
       initialSavedLists={initialSavedLists}
+      initialReceiptAliases={initialReceiptAliases}
     />
   );
 }

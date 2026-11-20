@@ -18,3 +18,7 @@
   - `src/lib/services/shopping-lists.ts` & `GET/POST/DELETE /api/v1/lists`: Einkaufslisten dauerhaft in `shopping_lists` und `shopping_list_items` speichern, aktualisieren, wiederladen und löschen.
   - `src/lib/services/base-prices.ts` & `GET/PATCH/POST /api/v1/base-prices`: 1-Klick-Basispreis-Korrektur je Kette und Kategorie direkt aus der Supermarkt-Abhakliste (`−10 ct` / `+10 ct` / `Standard`).
   - Vollständige Unit- und DB-Tests in `src/lib/__tests__/persistence.test.ts`.
+- **Ausbaustufe 2 – Paket 4 (Kassenbon / E-Bon Crowdsourcing & Mobile PWA):** Umgesetzt durch Antigravity.
+  - `src/lib/providers/receipt-importer.ts` & `src/lib/services/receipts.ts` & `GET/POST /api/v1/receipts/import`: Deterministischer deutscher Kassenbon-Parser (Kopf-Erkennung für Kette/PLZ/Datum, Pfand-/Summen-Filter, Wiegeware `kg × €/kg`, Mehrfachmengen `2 ×`, Rabatt-Zeilen für gleichzeitiges Basispreis- & App-Angebots-Update) sowie selbstlernendes Kürzel-Wörterbuch (`receipt_aliases`) mit 1-Klick-Zuordnung in der UI.
+  - Idempotente DB-Migration für `receipt_aliases` und `receipt_observations` in `src/db/migrate.ts` + Tests in `src/lib/__tests__/receipt-importer.test.ts`.
+  - Mobile-PWA-Unterstützung (Bottom-Navigation, `manifest.webmanifest`, Service Worker, `localStorage`-Persistenz, rechtlicher Transparenz-Footer) + `gh-pages` Live-Build.
