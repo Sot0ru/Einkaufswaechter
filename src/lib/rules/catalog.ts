@@ -85,20 +85,22 @@ export type DepartmentId =
 export interface DepartmentDefinition {
   id: DepartmentId;
   name: string;
+  /** Kurzname für kompakte Darstellungen wie den Linienplan (z. B. "Kühlregal") */
+  shortName: string;
   icon: string;
   /** Typische Laufroute im deutschen Supermarkt (1 = Eingang / Obst & Gemüse, 8 = Drogerie/Kasse) */
   sortOrder: number;
 }
 
 export const DEPARTMENTS: readonly DepartmentDefinition[] = [
-  { id: "obst_gemuese", name: "Obst & Gemüse", icon: "🥦", sortOrder: 1 },
-  { id: "backwaren", name: "Brot & Backwaren", icon: "🥖", sortOrder: 2 },
-  { id: "kuehlung", name: "Kühlregal & Molkerei", icon: "🧀", sortOrder: 3 },
-  { id: "fleisch_wurst", name: "Fleisch & Wurst", icon: "🥩", sortOrder: 4 },
-  { id: "trocken", name: "Vorrat & Trockensortiment", icon: "🍝", sortOrder: 5 },
-  { id: "tiefkuehl", name: "Tiefkühlkost", icon: "🧊", sortOrder: 6 },
-  { id: "getraenke", name: "Getränke & Kaffee", icon: "☕", sortOrder: 7 },
-  { id: "haushalt", name: "Haushalt & Drogerie", icon: "🧻", sortOrder: 8 },
+  { id: "obst_gemuese", name: "Obst & Gemüse", shortName: "Obst & Gemüse", icon: "🥦", sortOrder: 1 },
+  { id: "backwaren", name: "Brot & Backwaren", shortName: "Backwaren", icon: "🥖", sortOrder: 2 },
+  { id: "kuehlung", name: "Kühlregal & Molkerei", shortName: "Kühlregal", icon: "🧀", sortOrder: 3 },
+  { id: "fleisch_wurst", name: "Fleisch & Wurst", shortName: "Fleisch & Wurst", icon: "🥩", sortOrder: 4 },
+  { id: "trocken", name: "Vorrat & Trockensortiment", shortName: "Vorrat", icon: "🍝", sortOrder: 5 },
+  { id: "tiefkuehl", name: "Tiefkühlkost", shortName: "Tiefkühl", icon: "🧊", sortOrder: 6 },
+  { id: "getraenke", name: "Getränke & Kaffee", shortName: "Getränke", icon: "☕", sortOrder: 7 },
+  { id: "haushalt", name: "Haushalt & Drogerie", shortName: "Haushalt", icon: "🧻", sortOrder: 8 },
 ] as const;
 
 export const DEPARTMENT_MAP: Record<DepartmentId, DepartmentDefinition> = Object.fromEntries(
@@ -115,6 +117,8 @@ export interface BasePriceEntry {
 export interface CategoryDefinition {
   id: string;
   name: string;
+  /** Kurzname für kompakte Darstellungen wie den Linienplan (z. B. "Butter") */
+  shortName: string;
   subtitle: string;
   department: DepartmentId;
   unit: BaseUnit;
@@ -152,6 +156,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "bananen_1kg",
     name: "Bananen",
+    shortName: "Bananen",
     subtitle: "1 kg",
     department: "obst_gemuese",
     unit: "g",
@@ -173,6 +178,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "rispentomaten_500g",
     name: "Rispentomaten",
+    shortName: "Rispentomaten",
     subtitle: "500 g",
     department: "obst_gemuese",
     unit: "g",
@@ -198,6 +204,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "kartoffeln_2kg",
     name: "Speisekartoffeln",
+    shortName: "Kartoffeln",
     subtitle: "2 kg Netz",
     department: "obst_gemuese",
     unit: "g",
@@ -223,6 +230,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "gurke_1st",
     name: "Salatgurke",
+    shortName: "Gurke",
     subtitle: "1 Stück",
     department: "obst_gemuese",
     unit: "stueck",
@@ -248,6 +256,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "aepfel_1kg",
     name: "Tafeläpfel",
+    shortName: "Äpfel",
     subtitle: "1 kg Schale/Beutel",
     department: "obst_gemuese",
     unit: "g",
@@ -275,6 +284,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "toastbrot_500g",
     name: "Buttertoast / Sandwichtoast",
+    shortName: "Toastbrot",
     subtitle: "500 g Packung",
     department: "backwaren",
     unit: "g",
@@ -296,6 +306,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "aufbackbroetchen_6st",
     name: "Weizen-Aufbackbrötchen",
+    shortName: "Aufbackbrötchen",
     subtitle: "6–8 Stück Packung",
     department: "backwaren",
     unit: "stueck",
@@ -319,6 +330,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "butter_250g",
     name: "Markenbutter / Süßrahmbutter",
+    shortName: "Butter",
     subtitle: "250 g Packung",
     department: "kuehlung",
     unit: "g",
@@ -351,6 +363,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "vollmilch_1l",
     name: "Vollmilch (3,5 % / 3,8 %)",
+    shortName: "Vollmilch",
     subtitle: "1 Liter Packung",
     department: "kuehlung",
     unit: "ml",
@@ -372,6 +385,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "gouda_400g",
     name: "Gouda jung in Scheiben",
+    shortName: "Gouda",
     subtitle: "400 g Packung",
     department: "kuehlung",
     unit: "g",
@@ -393,6 +407,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "eier_10st",
     name: "Freiland- / Bodenhaltung-Eier",
+    shortName: "Eier",
     subtitle: "10er Packung",
     department: "kuehlung",
     unit: "stueck",
@@ -414,6 +429,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "naturjoghurt_500g",
     name: "Naturjoghurt mild",
+    shortName: "Joghurt",
     subtitle: "500 g Becher",
     department: "kuehlung",
     unit: "g",
@@ -435,6 +451,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "speisequark_500g",
     name: "Speisequark / Magerquark",
+    shortName: "Quark",
     subtitle: "500 g Becher",
     department: "kuehlung",
     unit: "g",
@@ -458,6 +475,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "hackfleisch_500g",
     name: "Hackfleisch gemischt / Rinderhack",
+    shortName: "Hackfleisch",
     subtitle: "500 g Packung",
     department: "fleisch_wurst",
     unit: "g",
@@ -483,6 +501,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "haehnchenbrust_400g",
     name: "Hähnchenbrustfilet",
+    shortName: "Hähnchenbrust",
     subtitle: "400 g Packung",
     department: "fleisch_wurst",
     unit: "g",
@@ -504,6 +523,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "kochschinken_200g",
     name: "Hinterkochschinken",
+    shortName: "Kochschinken",
     subtitle: "200 g Packung",
     department: "fleisch_wurst",
     unit: "g",
@@ -527,6 +547,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "pasta_500g",
     name: "Spaghetti / Pasta (Hartweizen)",
+    shortName: "Pasta",
     subtitle: "500 g Packung",
     department: "trocken",
     unit: "g",
@@ -548,6 +569,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "passierte_tomaten_500g",
     name: "Passierte / Gehackte Tomaten",
+    shortName: "Passierte Tomaten",
     subtitle: "500 g Packung / Dose",
     department: "trocken",
     unit: "g",
@@ -569,6 +591,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "olivenoel_500ml",
     name: "Natives Olivenöl extra",
+    shortName: "Olivenöl",
     subtitle: "500 ml – 750 ml Flasche",
     department: "trocken",
     unit: "ml",
@@ -594,6 +617,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "reis_1kg",
     name: "Basmati- / Jasmin- / Langkornreis",
+    shortName: "Reis",
     subtitle: "1 kg Packung",
     department: "trocken",
     unit: "g",
@@ -615,6 +639,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "haferflocken_500g",
     name: "Haferflocken (zart / kernig)",
+    shortName: "Haferflocken",
     subtitle: "500 g Packung",
     department: "trocken",
     unit: "g",
@@ -638,6 +663,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "tk_pizza_1st",
     name: "Tiefkühl-Pizza (Salami / Margherita)",
+    shortName: "TK-Pizza",
     subtitle: "320–400 g Packung",
     department: "tiefkuehl",
     unit: "g",
@@ -665,6 +691,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "filterkaffee_500g",
     name: "Röstkaffee / Filterkaffee gemahlen",
+    shortName: "Kaffee",
     subtitle: "500 g Vakuumpackung",
     department: "getraenke",
     unit: "g",
@@ -690,6 +717,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "mineralwasser_6x15l",
     name: "Mineralwasser (Sixpack)",
+    shortName: "Mineralwasser",
     subtitle: "6 × 1,5 Liter",
     department: "getraenke",
     unit: "ml",
@@ -713,6 +741,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   {
     id: "toilettenpapier_8st",
     name: "Toilettenpapier 3-/4-lagig",
+    shortName: "Toilettenpapier",
     subtitle: "8–10 Rollen Packung",
     department: "haushalt",
     unit: "stueck",

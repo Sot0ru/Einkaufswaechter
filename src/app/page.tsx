@@ -26,16 +26,16 @@ async function OptimizerLoader() {
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen">
+    <div className="min-h-screen">
       <Suspense
         fallback={
-          <div className="mx-auto max-w-5xl px-4 py-12 text-center text-sm text-muted">
-            Lade Preisdatenbank & aktuelle Wochenangebote der 7 Supermarkt-Ketten…
-          </div>
+          <p className="mx-auto max-w-5xl px-4 py-12 text-center text-[15px] text-muted">
+            Lade Preise und Wochenangebote der 7 Supermarkt-Ketten…
+          </p>
         }
       >
         <OptimizerLoader />
       </Suspense>
-    </main>
+    </div>
   );
 }

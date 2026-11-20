@@ -1,48 +1,76 @@
 @import "tailwindcss";
 
+/*
+ * Designrichtung „Laufroute“: Der Einkauf als Linienplan.
+ * Blau ist die Route im Hauptladen, Orange ausschließlich der Abstecher zum Zweitladen.
+ */
 :root {
-  --paper: #f5f1ea;
-  --card: #fffdf9;
-  --ink: #17202c;
-  --muted: #5c667a;
-  --line: #ded7cb;
-  --accent: #0b7a5c;
-  --accent-ink: #ffffff;
-  --good: #0b7a5c;
-  --good-soft: #dff3ea;
-  --warn-soft: #fdecc8;
-  --warn-ink: #7a4b00;
+  --paper: #ffffff;
+  --panel: #eef2f6;
+  --ink: #10233a;
+  --muted: #526275;
+  --line: #d3dce5;
+  --line-strong: #b9c6d3;
+  --sign: #173a5e;
+  --sign-ink: #ffffff;
+  --sign-muted: #c3d2e2;
+  --choice: #173a5e;
+  --choice-ink: #ffffff;
+  --route: #1d5fb4;
+  --route-ink: #ffffff;
+  --route-soft: #b9cbe3;
+  --detour: #e07800;
+  --detour-strong: #a04c00;
+  --detour-soft: #fff1e2;
+  --detour-plate: #a04c00;
+  --detour-plate-ink: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #0e131a;
-    --card: #171e28;
-    --ink: #ece8e1;
-    --muted: #98a2b3;
-    --line: #2b3542;
-    --accent: #34d399;
-    --accent-ink: #071b13;
-    --good: #5fd3ac;
-    --good-soft: #12362c;
-    --warn-soft: #3a2c0c;
-    --warn-ink: #f5cf7a;
+    --paper: #0e1722;
+    --panel: #162332;
+    --ink: #e6edf5;
+    --muted: #9aaec3;
+    --line: #263749;
+    --line-strong: #3a5068;
+    --sign: #0a1f36;
+    --sign-ink: #f2f6fa;
+    --sign-muted: #a6bbd2;
+    --choice: #5e9ef2;
+    --choice-ink: #04172c;
+    --route: #5e9ef2;
+    --route-ink: #04172c;
+    --route-soft: #2b4563;
+    --detour: #f39a3b;
+    --detour-strong: #f7ae62;
+    --detour-soft: #33230f;
+    --detour-plate: #f39a3b;
+    --detour-plate-ink: #2a1500;
   }
 }
 
 @theme inline {
   --color-paper: var(--paper);
-  --color-card: var(--card);
+  --color-panel: var(--panel);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-line: var(--line);
-  --color-accent: var(--accent);
-  --color-accent-ink: var(--accent-ink);
-  --color-good: var(--good);
-  --color-good-soft: var(--good-soft);
-  --color-warn-soft: var(--warn-soft);
-  --color-warn-ink: var(--warn-ink);
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --color-line-strong: var(--line-strong);
+  --color-sign: var(--sign);
+  --color-sign-ink: var(--sign-ink);
+  --color-sign-muted: var(--sign-muted);
+  --color-choice: var(--choice);
+  --color-choice-ink: var(--choice-ink);
+  --color-route: var(--route);
+  --color-route-ink: var(--route-ink);
+  --color-route-soft: var(--route-soft);
+  --color-detour: var(--detour);
+  --color-detour-strong: var(--detour-strong);
+  --color-detour-soft: var(--detour-soft);
+  --color-detour-plate: var(--detour-plate);
+  --color-detour-plate-ink: var(--detour-plate-ink);
+  --font-sans: var(--font-overpass), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
@@ -52,6 +80,6 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid var(--route);
   outline-offset: 2px;
 }
