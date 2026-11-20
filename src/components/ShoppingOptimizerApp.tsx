@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { WeekWindow } from "@/lib/providers/demo-offers";
 import { parseBrochureText } from "@/lib/providers/text-importer";
 import {
@@ -29,11 +29,16 @@ import {
 import type { CustomBasePricesMap } from "@/lib/services/base-prices";
 import type { SavedShoppingList } from "@/lib/services/shopping-lists";
 
-interface ShoppingOptimizerAppProps {
+export const MOBILE_STORAGE_KEY = "einkaufswaechter_mobile_v1";
+
+export interface ShoppingOptimizerAppProps {
   initialOffers: OfferRecord[];
   weekWindow: WeekWindow;
   initialCustomBasePrices?: CustomBasePricesMap;
   initialSavedLists?: SavedShoppingList[];
+  initialBasketItems?: BasketItemInput[];
+  initialZipCode?: string;
+  initialCheckedKeys?: Record<string, boolean>;
 }
 
 type ActiveTab = "list" | "compare" | "instore" | "offers";
@@ -49,10 +54,13 @@ export function ShoppingOptimizerApp({
   weekWindow,
   initialCustomBasePrices = {},
   initialSavedLists = [],
+  initialBasketItems,
+  initialZipCode = "10115",
+  initialCheckedKeys = {},
 }: ShoppingOptimizerAppProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("compare");
-  const [zipCode, setZipCode] = useState("10115");
-  const [activeZipCode, setActiveZipCode] = useState("10115");
+  const [zipCode, setZipCode] = useState(initialZipCode);
+  const [activeZipCode, setActiveZipCode] = useState(initialZipCode);
   const [zipSyncFeedback, setZipSyncFeedback] = useState<string | null>(null);
   const [isSyncingZip, setIsSyncingZip] = useState(false);
   // Standardmäßig Samstag ausgewählt, damit auch Donnerstags-Angebote sichtbar sind
@@ -72,10 +80,10 @@ export function ShoppingOptimizerApp({
     "kaufland",
     "rewe",
   ]);
-  const [basketItems, setBasketItems] = useState<BasketItemInput[]>([
-    ...SHOPPING_PRESETS[0].items,
-  ]);
-  const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>({});
+  const [basketItems, setBasketItems] = useState<BasketItemInput[]>(
+    initialBasketItems ?? [...SHOPPING_PRESETS[0].items],
+  );
+  const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>(initialCheckedKeys);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentId | "all">("all");
   const [offers, setOffers] = useState<OfferRecord[]>(initialOffers);
@@ -88,6 +96,35 @@ export function ShoppingOptimizerApp({
   const [activeListId, setActiveListId] = useState<string | undefined>(undefined);
   const [listNameInput, setListNameInput] = useState("Mein Wocheneinkauf");
   const [listSaveFeedback, setListSaveFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        MOBILE_STORAGE_KEY,
+        JSON.stringify({
+          activeZipCode,
+          secondStoreThresholdCents,
+          enabledStores,
+          enabledLoyaltyApps,
+          basketItems,
+          checkedKeys,
+          customBasePrices,
+          savedLists,
+        }),
+      );
+    } catch {
+      // Ignorieren, falls localStorage im Privatmodus blockiert ist
+    }
+  }, [
+    activeZipCode,
+    secondStoreThresholdCents,
+    enabledStores,
+    enabledLoyaltyApps,
+    basketItems,
+    checkedKeys,
+    customBasePrices,
+    savedLists,
+  ]);
 
   // Für den Prospekt-Tester
   const [importStoreId, setImportStoreId] = useState<StoreId>("lidl");
@@ -1485,6 +1522,69 @@ export function ShoppingOptimizerApp({
           </section>
         </div>
       )}
+
+      {/* Rechtlicher Transparenz-, PAngV- & Marken-Hinweis */}
+      <footer className="mt-8 mb-20 rounded-2xl border border-line bg-card/70 px-5 py-4 text-xs text-muted sm:mb-4">
+        <div className="font-semibold text-ink">
+          Rechtlicher Hinweis & Preis-Transparenz (PAngV / § 23 MarkenG)
+        </div>
+        <p className="mt-1 leading-relaxed">
+          <strong>Unabhängiger Preis- & Prospekt-Optimierer:</strong> Einkaufswächter steht in
+          keiner geschäftlichen Verbindung zu den genannten Handelsketten (Lidl, Aldi Nord/Süd,
+          Rewe, Edeka, Kaufland, Netto Marken-Discount, Penny). Alle genannten Marken- und
+          Produktbezeichnungen dienen ausschließlich der beschreibenden Zuordnung. Es werden keine
+          urheberrechtlich geschützten Prospektbilder verwendet. Reguläre Basispreise sind
+          Eigenmarken-Referenzwerte; tatsächliche Kassenpreise und regionale Verfügbarkeiten im
+          Markt können abweichen (alle Angaben ohne Gewähr).
+        </p>
+      </footer>
+
+      {/* Mobile Bottom-Navigation für 1-Daumen-Bedienung im Supermarkt */}
+      <nav
+        aria-label="Mobile Navigation"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur-xs sm:hidden"
+      >
+        <button
+          type="button"
+          onClick={() => setActiveTab("compare")}
+          className={`flex flex-col items-center rounded-xl py-1 text-[11px] font-semibold transition ${
+            activeTab === "compare" ? "text-good" : "text-muted"
+          }`}
+        >
+          <span className="text-base">🏆</span>
+          <span>Vergleich</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("list")}
+          className={`flex flex-col items-center rounded-xl py-1 text-[11px] font-semibold transition ${
+            activeTab === "list" ? "text-good" : "text-muted"
+          }`}
+        >
+          <span className="text-base">📝</span>
+          <span>Liste ({totalItemCount})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("instore")}
+          className={`flex flex-col items-center rounded-xl py-1 text-[11px] font-semibold transition ${
+            activeTab === "instore" ? "text-good" : "text-muted"
+          }`}
+        >
+          <span className="text-base">🛒</span>
+          <span>Im Laden</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("offers")}
+          className={`flex flex-col items-center rounded-xl py-1 text-[11px] font-semibold transition ${
+            activeTab === "offers" ? "text-good" : "text-muted"
+          }`}
+        >
+          <span className="text-base">📍</span>
+          <span>PLZ ({activeZipCode})</span>
+        </button>
+      </nav>
     </div>
   );
 }
