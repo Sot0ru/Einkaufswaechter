@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { syncOffersForZipCode } from "@/lib/providers/zip-offer-sync";
 import { STORES, type StoreId } from "@/lib/rules/catalog";
 import { optimizeShoppingBasket } from "@/lib/rules/optimizer";
+import { getCustomBasePricesMap } from "@/lib/services/base-prices";
 
 const validStoreIds = STORES.map((s) => s.id) as [StoreId, ...StoreId[]];
 
@@ -35,13 +36,17 @@ export async function POST(request: Request) {
     }
 
     const db = await getDb();
-    const syncResult = await syncOffersForZipCode(db, {
-      zipCode: parsed.data.zipCode,
-      referenceDate: parsed.data.shoppingDate,
-    });
+    const [syncResult, customBasePrices] = await Promise.all([
+      syncOffersForZipCode(db, {
+        zipCode: parsed.data.zipCode,
+        referenceDate: parsed.data.shoppingDate,
+      }),
+      getCustomBasePricesMap(db),
+    ]);
     const result = optimizeShoppingBasket({
       ...parsed.data,
       offers: syncResult.offers,
+      customBasePrices,
     });
 
     return NextResponse.json({

@@ -12,7 +12,9 @@
   - Matcher (`src/lib/rules/matcher.ts`) um Wortgrenzen-Erkennung bei kurzen Include-/Exclude-Keywords, `(100 g = ...)`-Grundpreis-Bereinigung, Stück-Einheiten (`Tabs`, `Pads`, `WL`) und Packungsgrößen-Nähe-Scoring ergänzt.
   - Vollständige Invarianten- und Selbst-Matching-Tests über alle 172 Kategorien in `src/lib/__tests__/matcher.test.ts`.
 - **Ausbaustufe 2 – Paket 2 (Automatischer Angebots-Fetcher nach PLZ):** Umgesetzt durch Antigravity.
-  - `src/lib/providers/zip-offer-fetcher.ts`: PLZ-Validierung, Zuordnung zu den 5 deutschen Handelsregionen (`ost`, `nord`, `west`, `suedwest`, `sued`) inkl. Aldi-Äquator (`Aldi Nord` vs. `Aldi Süd`), externer JSON-Feed-Adapter (`OFFER_FEED_URL`) mit deterministischem Regional-Fallback.
-  - `src/lib/providers/zip-offer-sync.ts` & idempotente Migration in `src/db/migrate.ts` (`offer_fetch_runs` + `weekly_offers_zip_lookup_idx`).
-  - API-Routen `GET/POST /api/cron/fetch-offers` und `GET /api/v1/offers?zipCode=...` (mit `await connection()` für Next.js 16 `cacheComponents`).
-  - UI-Integration in `src/components/ShoppingOptimizerApp.tsx` (Live-PLZ-Wechsel im Header & Regional-Schnellwahl in Reiter 4) + Tests in `src/lib/__tests__/zip-offer-fetcher.test.ts`.
+  - `src/lib/providers/zip-offer-fetcher.ts` & `src/lib/providers/zip-offer-sync.ts`: PLZ-Validierung, Zuordnung zu den 5 deutschen Handelsregionen (`ost`, `nord`, `west`, `suedwest`, `sued`) inkl. Aldi-Äquator (`Aldi Nord` vs. `Aldi Süd`), externer JSON-Feed-Adapter (`OFFER_FEED_URL`) mit deterministischem Regional-Fallback, idempotente DB-Migration (`offer_fetch_runs`).
+  - API-Routen `GET/POST /api/cron/fetch-offers` und `GET /api/v1/offers?zipCode=...` + Tests in `src/lib/__tests__/zip-offer-fetcher.test.ts`.
+- **Ausbaustufe 2 – Paket 3 (Persistente Einkaufslisten & 1-Klick-Basispreis-Korrektur im Laden):** Umgesetzt durch Antigravity.
+  - `src/lib/services/shopping-lists.ts` & `GET/POST/DELETE /api/v1/lists`: Einkaufslisten dauerhaft in `shopping_lists` und `shopping_list_items` speichern, aktualisieren, wiederladen und löschen.
+  - `src/lib/services/base-prices.ts` & `GET/PATCH/POST /api/v1/base-prices`: 1-Klick-Basispreis-Korrektur je Kette und Kategorie direkt aus der Supermarkt-Abhakliste (`−10 ct` / `+10 ct` / `Standard`).
+  - Vollständige Unit- und DB-Tests in `src/lib/__tests__/persistence.test.ts`.

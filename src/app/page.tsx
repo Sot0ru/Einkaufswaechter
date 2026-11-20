@@ -4,6 +4,8 @@ import { ShoppingOptimizerApp } from "@/components/ShoppingOptimizerApp";
 import { getDb } from "@/db";
 import { ensureCatalogAndDemoOffers } from "@/db/seed";
 import { getWeekWindowForDate } from "@/lib/providers/demo-offers";
+import { getCustomBasePricesMap } from "@/lib/services/base-prices";
+import { listSavedShoppingLists } from "@/lib/services/shopping-lists";
 
 const todayInVienna = (): string => {
   return new Intl.DateTimeFormat("sv-SE", {
@@ -20,8 +22,19 @@ async function OptimizerLoader() {
   const weekWindow = getWeekWindowForDate(today);
   const db = await getDb();
   const initialOffers = await ensureCatalogAndDemoOffers(db, today);
+  const [initialCustomBasePrices, initialSavedLists] = await Promise.all([
+    getCustomBasePricesMap(db),
+    listSavedShoppingLists(db),
+  ]);
 
-  return <ShoppingOptimizerApp initialOffers={initialOffers} weekWindow={weekWindow} />;
+  return (
+    <ShoppingOptimizerApp
+      initialOffers={initialOffers}
+      weekWindow={weekWindow}
+      initialCustomBasePrices={initialCustomBasePrices}
+      initialSavedLists={initialSavedLists}
+    />
+  );
 }
 
 export default function HomePage() {

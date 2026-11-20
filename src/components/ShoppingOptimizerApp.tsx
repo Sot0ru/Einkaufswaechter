@@ -26,10 +26,14 @@ import {
   type OfferRecord,
   optimizeShoppingBasket,
 } from "@/lib/rules/optimizer";
+import type { CustomBasePricesMap } from "@/lib/services/base-prices";
+import type { SavedShoppingList } from "@/lib/services/shopping-lists";
 
 interface ShoppingOptimizerAppProps {
   initialOffers: OfferRecord[];
   weekWindow: WeekWindow;
+  initialCustomBasePrices?: CustomBasePricesMap;
+  initialSavedLists?: SavedShoppingList[];
 }
 
 type ActiveTab = "list" | "compare" | "instore" | "offers";
@@ -43,6 +47,8 @@ Erdnussbutter Creamy 350 g 1,99 €`;
 export function ShoppingOptimizerApp({
   initialOffers,
   weekWindow,
+  initialCustomBasePrices = {},
+  initialSavedLists = [],
 }: ShoppingOptimizerAppProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("compare");
   const [zipCode, setZipCode] = useState("10115");
@@ -73,6 +79,15 @@ export function ShoppingOptimizerApp({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentId | "all">("all");
   const [offers, setOffers] = useState<OfferRecord[]>(initialOffers);
+  const [customBasePrices, setCustomBasePrices] =
+    useState<CustomBasePricesMap>(initialCustomBasePrices);
+  const [priceEditFeedback, setPriceEditFeedback] = useState<string | null>(null);
+
+  // Persistente Einkaufslisten
+  const [savedLists, setSavedLists] = useState<SavedShoppingList[]>(initialSavedLists);
+  const [activeListId, setActiveListId] = useState<string | undefined>(undefined);
+  const [listNameInput, setListNameInput] = useState("Mein Wocheneinkauf");
+  const [listSaveFeedback, setListSaveFeedback] = useState<string | null>(null);
 
   // Für den Prospekt-Tester
   const [importStoreId, setImportStoreId] = useState<StoreId>("lidl");
@@ -93,6 +108,7 @@ export function ShoppingOptimizerApp({
         shoppingDate,
         secondStoreThresholdCents,
         offers,
+        customBasePrices,
       }),
     [
       basketItems,
@@ -101,6 +117,7 @@ export function ShoppingOptimizerApp({
       shoppingDate,
       secondStoreThresholdCents,
       offers,
+      customBasePrices,
     ],
   );
 
@@ -213,6 +230,170 @@ export function ShoppingOptimizerApp({
       );
     } finally {
       setIsSyncingZip(false);
+    }
+  };
+
+  const handleSaveCurrentList = async (asNew = false) => {
+    const trimmed = listNameInput.trim();
+    if (!trimmed) {
+      setListSaveFeedback("Bitte einen Namen für die Einkaufsliste eingeben.");
+      return;
+    }
+    if (basketItems.length === 0) {
+      setListSaveFeedback("Deine Einkaufsliste ist leer.");
+      return;
+    }
+
+    const payload = {
+      id: asNew ? undefined : activeListId,
+      name: trimmed,
+      zipCode: activeZipCode,
+      shoppingDate,
+      secondStoreThresholdCents,
+      items: basketItems.map((item) => ({
+        categoryId: item.categoryId,
+        quantity: item.quantity,
+        checked: false,
+      })),
+    };
+
+    try {
+      const res = await fetch("/api/v1/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.lists)) {
+          setSavedLists(data.lists);
+        }
+        if (data.list?.id) {
+          setActiveListId(data.list.id);
+        }
+        setListSaveFeedback(`Einkaufsliste „${trimmed}“ in der Datenbank gespeichert!`);
+        return;
+      }
+    } catch {
+      // Lokaler Fallback
+    }
+
+    const fallbackId = (!asNew && activeListId) || `local-${Date.now()}`;
+    const localEntry: SavedShoppingList = {
+      id: fallbackId,
+      name: trimmed,
+      zipCode: activeZipCode,
+      shoppingDate,
+      secondStoreThresholdCents,
+      createdAt: new Date().toISOString(),
+      items: payload.items,
+    };
+    setSavedLists((prev) => [localEntry, ...prev.filter((l) => l.id !== fallbackId)]);
+    setActiveListId(fallbackId);
+    setListSaveFeedback(`Einkaufsliste „${trimmed}“ gespeichert!`);
+  };
+
+  const handleLoadSavedList = (list: SavedShoppingList) => {
+    setBasketItems(
+      list.items.map((i) => ({ categoryId: i.categoryId, quantity: i.quantity })),
+    );
+    setActiveListId(list.id);
+    setListNameInput(list.name);
+    setSecondStoreThresholdCents(list.secondStoreThresholdCents);
+    setCheckedKeys({});
+    if (list.zipCode && list.zipCode !== activeZipCode) {
+      void handleFetchZipOffers(list.zipCode);
+    }
+    setListSaveFeedback(`Einkaufsliste „${list.name}“ geladen.`);
+  };
+
+  const handleDeleteSavedList = async (listId: string) => {
+    setSavedLists((prev) => prev.filter((l) => l.id !== listId));
+    if (activeListId === listId) {
+      setActiveListId(undefined);
+    }
+    try {
+      await fetch(`/api/v1/lists?id=${encodeURIComponent(listId)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // Lokal bereits entfernt
+    }
+  };
+
+  const handleAdjustBasePrice = async (
+    categoryId: string,
+    storeId: StoreId,
+    deltaCents: number,
+  ) => {
+    const cat = CATEGORY_MAP[categoryId];
+    if (!cat) return;
+    const currentEntry =
+      customBasePrices[categoryId]?.[storeId] ?? cat.defaultBasePrices[storeId];
+    const nextPriceCents = Math.max(10, currentEntry.priceCents + deltaCents);
+
+    setCustomBasePrices((prev) => ({
+      ...prev,
+      [categoryId]: {
+        ...(prev[categoryId] ?? {}),
+        [storeId]: {
+          priceCents: nextPriceCents,
+          productLabel: currentEntry.productLabel,
+        },
+      },
+    }));
+    setPriceEditFeedback(
+      `Basispreis für „${cat.name}“ bei ${STORE_MAP[storeId].shortName} auf ${formatEuroCents(nextPriceCents)} korrigiert.`,
+    );
+
+    try {
+      await fetch("/api/v1/base-prices", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId,
+          storeId,
+          priceCents: nextPriceCents,
+          productLabel: currentEntry.productLabel,
+        }),
+      });
+    } catch {
+      // Optimistisches State-Update bereits aktiv
+    }
+  };
+
+  const handleResetBasePrice = async (categoryId: string, storeId: StoreId) => {
+    const cat = CATEGORY_MAP[categoryId];
+    if (!cat) return;
+    const defaultEntry = cat.defaultBasePrices[storeId];
+
+    setCustomBasePrices((prev) => {
+      const nextCat = { ...(prev[categoryId] ?? {}) };
+      delete nextCat[storeId];
+      const nextMap = { ...prev };
+      if (Object.keys(nextCat).length === 0) {
+        delete nextMap[categoryId];
+      } else {
+        nextMap[categoryId] = nextCat;
+      }
+      return nextMap;
+    });
+    setPriceEditFeedback(
+      `Basispreis für „${cat.name}“ bei ${STORE_MAP[storeId].shortName} auf Standard (${formatEuroCents(defaultEntry.priceCents)}) zurückgesetzt.`,
+    );
+
+    try {
+      await fetch("/api/v1/base-prices", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId,
+          storeId,
+          resetToDefault: true,
+        }),
+      });
+    } catch {
+      // Optimistisches State-Update bereits aktiv
     }
   };
 
@@ -716,12 +897,97 @@ export function ShoppingOptimizerApp({
       {/* TAB 2: EINKAUFSLISTE & VORLAGEN */}
       {activeTab === "list" && (
         <div className="space-y-6">
+          {/* Persistente Einkaufslisten speichern & laden */}
+          <section className="rounded-2xl border border-line bg-card p-5 shadow-xs">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+                  Persistente Einkaufslisten ({savedLists.length} gespeichert)
+                </h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  Speichere deine aktuelle Einkaufsliste dauerhaft in der Datenbank, um sie nächste
+                  Woche mit 1 Klick wiederzuladen.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={listNameInput}
+                  onChange={(e) => setListNameInput(e.target.value)}
+                  placeholder="Name der Einkaufsliste…"
+                  aria-label="Name der Einkaufsliste"
+                  className="rounded-xl border border-line bg-paper px-3 py-1.5 text-sm sm:w-56"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSaveCurrentList(false)}
+                  className="rounded-xl bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-ink transition hover:opacity-95"
+                >
+                  {activeListId ? "Liste aktualisieren" : "Liste speichern"}
+                </button>
+                {activeListId && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveCurrentList(true)}
+                    className="rounded-xl border border-line bg-paper px-3 py-1.5 text-xs font-semibold transition hover:border-accent"
+                  >
+                    Als neue Liste speichern
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {listSaveFeedback && (
+              <p className="mt-2 text-xs font-medium text-good">✓ {listSaveFeedback}</p>
+            )}
+
+            {savedLists.length > 0 && (
+              <div className="mt-3 grid gap-2.5 border-t border-line pt-3 sm:grid-cols-2 lg:grid-cols-3">
+                {savedLists.map((list) => {
+                  const isCurrent = activeListId === list.id;
+                  return (
+                    <div
+                      key={list.id}
+                      className={`flex items-center justify-between gap-2 rounded-xl border p-3 text-xs ${
+                        isCurrent ? "border-good bg-good-soft/30" : "border-line bg-paper"
+                      }`}
+                    >
+                      <div>
+                        <div className="font-semibold">{list.name}</div>
+                        <div className="mt-0.5 text-muted">
+                          {list.items.length} Kategorien · PLZ {list.zipCode}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadSavedList(list)}
+                          className="rounded-lg border border-line bg-card px-2.5 py-1 font-semibold hover:border-accent"
+                        >
+                          Laden
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteSavedList(list.id)}
+                          aria-label={`Liste ${list.name} löschen`}
+                          className="rounded-lg border border-line bg-card px-2 py-1 text-muted hover:text-ink"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
           {/* 1-Klick-Vorlagen */}
           <section className="rounded-2xl border border-line bg-card p-5 shadow-xs">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
               Schnellstart-Vorlagen (1 Klick)
             </h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {SHOPPING_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
@@ -903,7 +1169,14 @@ export function ShoppingOptimizerApp({
         <div className="space-y-6">
           {/* Modus-Umschalter */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card p-4 shadow-xs">
-            <div className="text-sm font-semibold">Welchen Einkaufsplan möchtest du abhaken?</div>
+            <div>
+              <div className="text-sm font-semibold">Welchen Einkaufsplan möchtest du abhaken?</div>
+              <div className="text-xs text-muted">
+                Tipp: Hat sich ein regulärer Eigenmarken-Preis im Regal geändert? Mit 1 Klick auf{" "}
+                <span className="font-mono font-semibold">−10 ct</span> /{" "}
+                <span className="font-mono font-semibold">+10 ct</span> direkt korrigieren!
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {split && (
                 <button
@@ -944,6 +1217,12 @@ export function ShoppingOptimizerApp({
             </div>
           </div>
 
+          {priceEditFeedback && (
+            <div className="rounded-xl border border-good/50 bg-good-soft/30 px-4 py-2.5 text-xs font-medium text-good">
+              ✓ {priceEditFeedback}
+            </div>
+          )}
+
           {/* Darstellung der Abhak-Listen */}
           {(() => {
             const showSplit =
@@ -962,6 +1241,9 @@ export function ShoppingOptimizerApp({
                     departments={split.primaryDepartments}
                     checkedKeys={checkedKeys}
                     onToggleChecked={toggleChecked}
+                    customBasePrices={customBasePrices}
+                    onAdjustBasePrice={handleAdjustBasePrice}
+                    onResetBasePrice={handleResetBasePrice}
                   />
                   <StoreChecklistCard
                     title={`2. Zweitladen: ${split.secondaryStoreName} (Nur Angebote)`}
@@ -970,6 +1252,9 @@ export function ShoppingOptimizerApp({
                     departments={split.secondaryDepartments}
                     checkedKeys={checkedKeys}
                     onToggleChecked={toggleChecked}
+                    customBasePrices={customBasePrices}
+                    onAdjustBasePrice={handleAdjustBasePrice}
+                    onResetBasePrice={handleResetBasePrice}
                   />
                 </div>
               );
@@ -993,6 +1278,9 @@ export function ShoppingOptimizerApp({
                 departments={single.departments}
                 checkedKeys={checkedKeys}
                 onToggleChecked={toggleChecked}
+                customBasePrices={customBasePrices}
+                onAdjustBasePrice={handleAdjustBasePrice}
+                onResetBasePrice={handleResetBasePrice}
               />
             );
           })()}
@@ -1208,6 +1496,9 @@ function StoreChecklistCard({
   departments,
   checkedKeys,
   onToggleChecked,
+  customBasePrices,
+  onAdjustBasePrice,
+  onResetBasePrice,
 }: {
   title: string;
   subtitle: string;
@@ -1215,6 +1506,9 @@ function StoreChecklistCard({
   departments: DepartmentGroup[];
   checkedKeys: Record<string, boolean>;
   onToggleChecked: (key: string) => void;
+  customBasePrices: CustomBasePricesMap;
+  onAdjustBasePrice: (categoryId: string, storeId: StoreId, deltaCents: number) => void;
+  onResetBasePrice: (categoryId: string, storeId: StoreId) => void;
 }) {
   return (
     <section className="rounded-2xl border border-line bg-card p-5 shadow-xs">
@@ -1241,6 +1535,15 @@ function StoreChecklistCard({
               {dept.items.map((item) => {
                 const checkKey = `${item.storeId}:${item.categoryId}`;
                 const isChecked = Boolean(checkedKeys[checkKey]);
+                const cat = CATEGORY_MAP[item.categoryId];
+                const defaultPackPriceCents =
+                  cat?.defaultBasePrices[item.storeId]?.priceCents ?? 0;
+                const customEntry = customBasePrices[item.categoryId]?.[item.storeId];
+                const currentBasePackCents =
+                  customEntry?.priceCents ?? defaultPackPriceCents;
+                const isCustomBase =
+                  customEntry != null && customEntry.priceCents !== defaultPackPriceCents;
+
                 return (
                   <li
                     key={checkKey}
@@ -1252,8 +1555,8 @@ function StoreChecklistCard({
                           : "border-line bg-paper"
                     }`}
                   >
-                    <label className="flex cursor-pointer items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <label className="flex flex-1 cursor-pointer items-start gap-2.5">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -1290,7 +1593,7 @@ function StoreChecklistCard({
                             </div>
                           )}
                         </div>
-                      </div>
+                      </label>
 
                       <div className="text-right font-mono">
                         <div className="text-sm font-bold">
@@ -1305,7 +1608,53 @@ function StoreChecklistCard({
                           {formatEuroCents(item.unitPriceCents)}/{item.unitLabel}
                         </div>
                       </div>
-                    </label>
+                    </div>
+
+                    {/* 1-Klick-Basispreis-Korrektur im Laden */}
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line/70 pt-2 text-[11px]">
+                      <span className="text-muted">
+                        Regulärer Basispreis ({item.storeName}):{" "}
+                        <strong className="font-mono text-ink">
+                          {formatEuroCents(currentBasePackCents)}
+                        </strong>
+                        {isCustomBase && (
+                          <span className="ml-1 rounded bg-warn-soft px-1.5 py-0.5 text-[10px] font-semibold text-warn-ink">
+                            angepasst (vorher {formatEuroCents(defaultPackPriceCents)})
+                          </span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onAdjustBasePrice(item.categoryId, item.storeId, -10)
+                          }
+                          className="rounded border border-line bg-card px-2 py-0.5 font-mono font-semibold hover:border-accent"
+                          title="Basispreis um 10 Cent senken"
+                        >
+                          −10 ct
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onAdjustBasePrice(item.categoryId, item.storeId, 10)
+                          }
+                          className="rounded border border-line bg-card px-2 py-0.5 font-mono font-semibold hover:border-accent"
+                          title="Basispreis um 10 Cent erhöhen"
+                        >
+                          +10 ct
+                        </button>
+                        {isCustomBase && (
+                          <button
+                            type="button"
+                            onClick={() => void onResetBasePrice(item.categoryId, item.storeId)}
+                            className="rounded border border-line bg-card px-2 py-0.5 text-muted hover:text-ink"
+                          >
+                            Standard
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </li>
                 );
               })}
