@@ -1,0 +1,90 @@
+import {
+  boolean,
+  date,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const stores = pgTable("stores", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  shortName: text("short_name").notNull(),
+  loyaltyAppName: text("loyalty_app_name"),
+  isDiscounter: boolean("is_discounter").default(false).notNull(),
+});
+
+export const categories = pgTable("categories", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  subtitle: text("subtitle").notNull(),
+  department: text("department").notNull(),
+  unit: text("unit").notNull(),
+  standardAmount: integer("standard_amount").notNull(),
+});
+
+export const basePrices = pgTable(
+  "base_prices",
+  {
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    storeId: text("store_id")
+      .notNull()
+      .references(() => stores.id, { onDelete: "cascade" }),
+    priceCents: integer("price_cents").notNull(),
+    productLabel: text("product_label").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.categoryId, table.storeId] })],
+);
+
+export const weeklyOffers = pgTable("weekly_offers", {
+  id: text("id").primaryKey(),
+  storeId: text("store_id")
+    .notNull()
+    .references(() => stores.id, { onDelete: "cascade" }),
+  zipCode: text("zip_code").default("10115").notNull(),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  priceCents: integer("price_cents").notNull(),
+  loyaltyPriceCents: integer("loyalty_price_cents"),
+  requiresLoyaltyApp: boolean("requires_loyalty_app").default(false).notNull(),
+  packageAmount: integer("package_amount").notNull(),
+  packageUnit: text("package_unit").notNull(),
+  validFrom: date("valid_from", { mode: "string" }).notNull(),
+  validTo: date("valid_to", { mode: "string" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const shoppingLists = pgTable("shopping_lists", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  zipCode: text("zip_code").default("10115").notNull(),
+  shoppingDate: date("shopping_date", { mode: "string" }).notNull(),
+  secondStoreThresholdCents: integer("second_store_threshold_cents").default(500).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const shoppingListItems = pgTable("shopping_list_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listId: uuid("list_id")
+    .notNull()
+    .references(() => shoppingLists.id, { onDelete: "cascade" }),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").default(1).notNull(),
+  checked: boolean("checked").default(false).notNull(),
+});
