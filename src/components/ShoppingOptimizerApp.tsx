@@ -7,6 +7,7 @@ import {
   CATEGORIES,
   CATEGORY_MAP,
   DEPARTMENTS,
+  type DepartmentId,
   SHOPPING_PRESETS,
   STORES,
   STORE_MAP,
@@ -61,6 +62,7 @@ export function ShoppingOptimizerApp({
   ]);
   const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDepartment, setSelectedDepartment] = useState<DepartmentId | "all">("all");
   const [offers, setOffers] = useState<OfferRecord[]>(initialOffers);
 
   // Für den Prospekt-Tester
@@ -746,7 +748,9 @@ export function ShoppingOptimizerApp({
             {/* Rechts: Allgemeine Produktkategorien hinzufügen */}
             <section className="rounded-2xl border border-line bg-card p-5 shadow-xs lg:col-span-7">
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                <h2 className="text-lg font-bold">Standard-Kategorien hinzufügen</h2>
+                <h2 className="text-lg font-bold">
+                  Standard-Kategorien ({CATEGORIES.length})
+                </h2>
                 <input
                   type="search"
                   value={searchQuery}
@@ -756,14 +760,50 @@ export function ShoppingOptimizerApp({
                 />
               </div>
 
-              <div className="mt-4 space-y-4">
+              {/* Abteilungs-Schnellfilter */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDepartment("all")}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                    selectedDepartment === "all"
+                      ? "border-accent bg-accent text-accent-ink"
+                      : "border-line bg-paper text-muted hover:text-ink"
+                  }`}
+                >
+                  Alle ({filteredCatalog.length})
+                </button>
                 {DEPARTMENTS.map((dept) => {
+                  const count = filteredCatalog.filter((c) => c.department === dept.id).length;
+                  if (count === 0) return null;
+                  const active = selectedDepartment === dept.id;
+                  return (
+                    <button
+                      key={dept.id}
+                      type="button"
+                      onClick={() => setSelectedDepartment(dept.id)}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                        active
+                          ? "border-accent bg-accent text-accent-ink"
+                          : "border-line bg-paper text-muted hover:text-ink"
+                      }`}
+                    >
+                      {dept.icon} {dept.name} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 space-y-4">
+                {DEPARTMENTS.filter(
+                  (dept) => selectedDepartment === "all" || selectedDepartment === dept.id,
+                ).map((dept) => {
                   const deptCategories = filteredCatalog.filter((c) => c.department === dept.id);
                   if (deptCategories.length === 0) return null;
                   return (
                     <div key={dept.id}>
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                        {dept.icon} {dept.name}
+                        {dept.icon} {dept.name} ({deptCategories.length})
                       </h3>
                       <div className="mt-2 grid gap-2 sm:grid-cols-2">
                         {deptCategories.map((cat) => {

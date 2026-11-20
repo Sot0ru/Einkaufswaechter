@@ -25,9 +25,9 @@
 
 ## Ausbaustufe 2: Ausbau Katalog & Automatisierter PLZ-Abruf
 
-- [ ] Erweiterung des Standard-Katalogs von den wichtigsten 32 Kern-Kategorien auf ~200 Kategorien.
+- [x] Erweiterung des Standard-Katalogs von den wichtigsten 20 Kern-Kategorien auf 172 normierte Alltags-Kategorien über alle 8 Abteilungen (inkl. Wortgrenzen-Schutz und vollständiger Matcher-Selbsttests).
 - [ ] Hintergrund-Cronjob (`/api/cron/fetch-offers`) für automatisierten wöchentlichen Angebots-Abruf nach PLZ.
-- [ ] Eigene Basispreis-Korrektur im Laden mit 1 Klick.
+- [ ] Persistente Einkaufslisten & eigene Basispreis-Korrektur im Laden mit 1 Klick.
 
 ## Ausbaustufe 3: Gerichte-Baukasten & Haushalts-Sync
 
