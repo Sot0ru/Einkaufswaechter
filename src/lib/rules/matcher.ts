@@ -47,15 +47,21 @@ export const detectLoyaltyRequirement = (text: string): boolean => {
  * - "6 x 1,5 l" -> { amount: 9000, unit: "ml" }
  * - "250-g-Pckg." -> { amount: 250, unit: "g" }
  * - "0,75 l" -> { amount: 750, unit: "ml" }
- * - "10er-Pack" / "8 Rollen" -> { amount: 10 / 8, unit: "stueck" }
+ * - "10er-Pack" / "8 Rollen" / "40 Tabs" -> { amount: 10 / 8 / 40, unit: "stueck" }
  */
 export const parsePackageSize = (text: string): ParsedPackageSize | null => {
-  // Grundpreis-Klammern wie "(1 kg = 6,36)" oder "1 l = 1.98" vorher entfernen,
-  // damit nicht "1 kg" aus dem Referenzpreis als Packungsgröße gelesen wird.
+  // Grundpreis-Klammern wie "(1 kg = 6,36)", "(100 g = 0,79)" oder "je 1 l = 1.98" vorher entfernen,
+  // damit nicht "1 kg" oder "100 g" aus dem Referenzpreis als Packungsgröße gelesen wird.
   const cleaned = text
     .toLowerCase()
-    .replace(/\(?\b1\s*(?:kg|l|liter)\s*=\s*\d+[,.]\d+\s*€?\)?/g, " ")
-    .replace(/\bje\s+1\s*(?:kg|l)\s*=\s*\d+[,.]\d+/g, " ");
+    .replace(
+      /\(?\b(?:1|100|1000)\s*(?:kg|g|gramm|l|liter|ml|st\.?|stück|wl)\s*=\s*\d+[,.]\d+\s*€?\)?/g,
+      " ",
+    )
+    .replace(
+      /\bje\s+(?:1|100|1000)\s*(?:kg|g|gramm|l|liter|ml|st\.?|stück|wl)\s*=\s*\d+[,.]\d+/g,
+      " ",
+    );
 
   // 1. Multipack wie "6 x 1,5 l" oder "2x 250 g"
   const multiMatch = cleaned.match(
@@ -78,11 +84,13 @@ export const parsePackageSize = (text: string): ParsedPackageSize | null => {
     return normalizeUnitAndAmount(value, rawUnit);
   }
 
-  // 3. Stückzahl wie "10er", "8 Rollen", "6 Stück"
-  const pieceMatch = cleaned.match(/\b(\d+)\s*(?:er[-\s]?(?:pack|pckg|karton)?|stück|st\.|rollen)\b/);
+  // 3. Stückzahl wie "10er", "8 Rollen", "6 Stück", "40 Tabs", "16 Pads", "20 WL"
+  const pieceMatch = cleaned.match(
+    /\b(\d+)\s*(?:er[-\s]?(?:pack|pckg|packung|karton|netz|beutel|schale)?|stück|st\.|stk\.?|rollen|tabs|pads|teebeutel|beutel|waschladungen|wl)\b/,
+  );
   if (pieceMatch) {
     const count = Number.parseInt(pieceMatch[1], 10);
-    if (count > 0 && count <= 100) {
+    if (count > 0 && count <= 200) {
       return { amount: count, unit: "stueck" };
     }
   }
@@ -122,10 +130,45 @@ export const computeUnitPriceCents = (
   return Math.round(priceCents / amount);
 };
 
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Prüft, ob ein Include-Keyword im Text vorkommt.
+ * - Kurze Keywords (<= 5 Zeichen wie "eis", "reis", "wein", "bier", "salz", "mehl") müssen als
+ *   eigenständiges Wort (durch Wort-/Trennzeichen begrenzt) auftreten, damit z. B. "eis" nicht in
+ *   "reis" oder "speisequark" und "wein" nicht in "schwein" matcht.
+ * - Längere Keywords erhalten einen Bonus, wenn sie als eigenständiges Wort/Phrase auftreten.
+ */
+const evaluateIncludeKeyword = (
+  fullText: string,
+  keyword: string,
+): { matched: boolean; isWholeWord: boolean } => {
+  if (!fullText.includes(keyword)) {
+    return { matched: false, isWholeWord: false };
+  }
+  const escaped = escapeRegex(keyword);
+  const isWholeWord = new RegExp(`(?:^|[^a-zäöüß])${escaped}(?:$|[^a-zäöüß])`, "i").test(fullText);
+  if (keyword.length <= 5 && !isWholeWord) {
+    return { matched: false, isWholeWord: false };
+  }
+  return { matched: true, isWholeWord };
+};
+
+const evaluateExcludeKeyword = (fullText: string, keyword: string): boolean => {
+  if (!fullText.includes(keyword)) {
+    return false;
+  }
+  if (keyword.length <= 4) {
+    const escaped = escapeRegex(keyword);
+    return new RegExp(`(?:^|[^a-zäöüß])${escaped}(?:$|[^a-zäöüß])`, "i").test(fullText);
+  }
+  return true;
+};
+
 /**
  * Prüft deterministisch, ob ein Angebotstitel zu einer unserer Standard-Kategorien passt.
- * Schützt durch `excludeKeywords` und Preis-Plausibilitäts-Korridore vor Fehlzuordnungen
- * wie der "Butterkäse-Falle".
+ * Schützt durch `excludeKeywords`, Wortgrenzen-Erkennung und Preis-Plausibilitäts-Korridore
+ * vor Fehlzuordnungen wie der "Butterkäse-Falle".
  */
 export const matchOfferToCategory = (
   candidate: RawOfferCandidate,
@@ -142,15 +185,24 @@ export const matchOfferToCategory = (
 
   for (const category of categories) {
     // 1. Ausschluss-Keywords zuerst prüfen (z. B. "butterkäse" schließt Kategorie "butter_250g" sofort aus)
-    const isExcluded = category.excludeKeywords.some((ex) => fullText.includes(ex));
+    const isExcluded = category.excludeKeywords.some((ex) =>
+      evaluateExcludeKeyword(fullText, ex),
+    );
     if (isExcluded) continue;
 
-    // 2. Include-Keywords prüfen
-    const matchingKeywords = category.includeKeywords.filter((inc) => fullText.includes(inc));
-    if (matchingKeywords.length === 0) continue;
-
-    // Längstes gematchtes Keyword bevorzugen (spezifischer Treffer schlägt kurzen Teilbegriff)
-    const longestKeyword = matchingKeywords.reduce((a, b) => (b.length > a.length ? b : a));
+    // 2. Include-Keywords prüfen (inkl. Wortgrenzen-Schutz bei kurzen Begriffen)
+    let bestCatKeyword = "";
+    let bestCatKeywordScore = -1;
+    for (const inc of category.includeKeywords) {
+      const evalResult = evaluateIncludeKeyword(fullText, inc);
+      if (!evalResult.matched) continue;
+      const kwScore = inc.length * 10 + (evalResult.isWholeWord ? 25 : 0);
+      if (kwScore > bestCatKeywordScore) {
+        bestCatKeywordScore = kwScore;
+        bestCatKeyword = inc;
+      }
+    }
+    if (bestCatKeywordScore < 0) continue;
 
     // 3. Wenn eine Einheit erkannt wurde, muss sie zur Kategorie-Einheit passen
     if (parsedSize && parsedSize.unit !== category.unit) {
@@ -175,11 +227,25 @@ export const matchOfferToCategory = (
       continue;
     }
 
-    const score = longestKeyword.length * 10 + (parsedSize ? 5 : 0);
+    let sizeScore = 0;
+    if (parsedSize) {
+      if (parsedSize.amount === category.standardAmount) {
+        sizeScore = 8;
+      } else if (
+        parsedSize.amount >= category.standardAmount * 0.5 &&
+        parsedSize.amount <= category.standardAmount * 2
+      ) {
+        sizeScore = 5;
+      } else {
+        sizeScore = 2;
+      }
+    }
+
+    const score = bestCatKeywordScore + sizeScore;
     if (score > bestScore) {
       bestScore = score;
       bestCategory = category;
-      bestKeyword = longestKeyword;
+      bestKeyword = bestCatKeyword;
     }
   }
 

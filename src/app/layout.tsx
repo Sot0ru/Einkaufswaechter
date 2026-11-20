@@ -10,11 +10,24 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Einkaufswächter",
+  },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f1ea" },
+    { media: "(prefers-color-scheme: light)", color: "#0b7a5c" },
     { media: "(prefers-color-scheme: dark)", color: "#0e131a" },
   ],
 };

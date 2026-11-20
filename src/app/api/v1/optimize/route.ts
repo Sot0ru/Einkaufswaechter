@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { connection } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { ensureCatalogAndDemoOffers } from "@/db/seed";
+import { syncOffersForZipCode } from "@/lib/providers/zip-offer-sync";
 import { STORES, type StoreId } from "@/lib/rules/catalog";
 import { optimizeShoppingBasket } from "@/lib/rules/optimizer";
+import { getCustomBasePricesMap } from "@/lib/services/base-prices";
 
 const validStoreIds = STORES.map((s) => s.id) as [StoreId, ...StoreId[]];
 
@@ -19,6 +20,7 @@ const OptimizeRequestSchema = z.object({
   enabledLoyaltyApps: z.array(z.enum(validStoreIds)).default([]),
   shoppingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   secondStoreThresholdCents: z.number().int().min(0).max(10000).default(500),
+  zipCode: z.string().regex(/^\d{5}$/).default("10115"),
 });
 
 export async function POST(request: Request) {
@@ -34,13 +36,24 @@ export async function POST(request: Request) {
     }
 
     const db = await getDb();
-    const offers = await ensureCatalogAndDemoOffers(db, parsed.data.shoppingDate);
+    const [syncResult, customBasePrices] = await Promise.all([
+      syncOffersForZipCode(db, {
+        zipCode: parsed.data.zipCode,
+        referenceDate: parsed.data.shoppingDate,
+      }),
+      getCustomBasePricesMap(db),
+    ]);
     const result = optimizeShoppingBasket({
       ...parsed.data,
-      offers,
+      offers: syncResult.offers,
+      customBasePrices,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      zipCode: syncResult.zipCode,
+      region: syncResult.region,
+    });
   } catch (error) {
     return NextResponse.json(
       {
