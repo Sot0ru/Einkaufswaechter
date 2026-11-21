@@ -40,6 +40,7 @@ export const buildExtendedCategories = (
   {
     id: "kiwis_500g",
     name: "Kiwis grün / Gold",
+    shortName: "Kiwis",
     subtitle: "500 g Schale",
     department: "obst_gemuese",
     unit: "g",
@@ -66,6 +67,7 @@ export const buildExtendedCategories = (
   {
     id: "blumenkohl_1st",
     name: "Blumenkohl frisch",
+    shortName: "Blumenkohl",
     subtitle: "1 Stück",
     department: "obst_gemuese",
     unit: "stueck",
@@ -92,6 +94,7 @@ export const buildExtendedCategories = (
   {
     id: "aubergine_1st",
     name: "Aubergine frisch",
+    shortName: "Aubergine",
     subtitle: "1 Stück",
     department: "obst_gemuese",
     unit: "stueck",
@@ -131,6 +134,7 @@ export const buildExtendedCategories = (
   {
     id: "radieschen_1st",
     name: "Radieschen frisch",
+    shortName: "Radieschen",
     subtitle: "1 Bund",
     department: "obst_gemuese",
     unit: "stueck",
@@ -213,6 +217,7 @@ export const buildExtendedCategories = (
   {
     id: "muffins_4er_300g",
     name: "Schoko- / Blaubeer-Muffins (4er)",
+    shortName: "Muffins",
     subtitle: "300 g Packung",
     department: "backwaren",
     unit: "g",
@@ -277,6 +282,7 @@ export const buildExtendedCategories = (
   {
     id: "buttermilch_500ml",
     name: "Reine Buttermilch / Kefir",
+    shortName: "Buttermilch",
     subtitle: "500 ml Becher",
     department: "kuehlung",
     unit: "ml",
@@ -311,6 +317,7 @@ export const buildExtendedCategories = (
   {
     id: "cheddar_scheiben_200g",
     name: "Cheddar in Scheiben / Burger-Käse",
+    shortName: "Cheddar",
     subtitle: "200 g Packung",
     department: "kuehlung",
     unit: "g",
@@ -337,6 +344,7 @@ export const buildExtendedCategories = (
   {
     id: "frische_tortellini_250g",
     name: "Frische Tortellini / Ravioli (Kühlregal)",
+    shortName: "Tortellini",
     subtitle: "250–400 g Packung",
     department: "kuehlung",
     unit: "g",
@@ -350,6 +358,7 @@ export const buildExtendedCategories = (
   {
     id: "gnocchi_500g",
     name: "Kartoffel-Gnocchi",
+    shortName: "Gnocchi",
     subtitle: "500 g Packung",
     department: "kuehlung",
     unit: "g",
@@ -396,6 +405,7 @@ export const buildExtendedCategories = (
   {
     id: "rinderhack_bio_400g",
     name: "Bio-Rinderhackfleisch",
+    shortName: "Bio-Rinderhack",
     subtitle: "400 g Packung",
     department: "fleisch_wurst",
     unit: "g",
@@ -606,6 +616,7 @@ export const buildExtendedCategories = (
   {
     id: "grill_bbq_sauce_250ml",
     name: "BBQ- / Knoblauch- / Grillsauce",
+    shortName: "Grillsauce",
     subtitle: "250 ml Flasche",
     department: "trocken",
     unit: "ml",
@@ -622,6 +633,7 @@ export const buildExtendedCategories = (
   {
     id: "oliven_glas_300g",
     name: "Grüne / Schwarze Oliven im Glas",
+    shortName: "Oliven",
     subtitle: "300 g Glas",
     department: "trocken",
     unit: "g",
@@ -784,6 +796,7 @@ export const buildExtendedCategories = (
   {
     id: "tk_laugenbrezeln_600g",
     name: "TK-Laugenbrezeln zum Aufbacken (10er)",
+    shortName: "TK-Brezeln",
     subtitle: "600–800 g Beutel",
     department: "tiefkuehl",
     unit: "g",
@@ -908,6 +921,7 @@ export const buildExtendedCategories = (
   {
     id: "feuchtes_toilettenpapier_60st",
     name: "Feuchtes Toilettenpapier",
+    shortName: "Feuchttücher",
     subtitle: "60 Stück Packung",
     department: "haushalt",
     unit: "stueck",
