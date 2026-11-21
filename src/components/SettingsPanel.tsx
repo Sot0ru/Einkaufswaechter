@@ -1,3 +1,4 @@
+import type { ZipRegionInfo } from "@/lib/providers/zip-offer-fetcher";
 import { STORES, type StoreId } from "@/lib/rules/catalog";
 import { formatThreshold } from "./format";
 import { SegmentedControl, ToggleChip } from "./ui";
@@ -17,6 +18,8 @@ type ShoppingDay = (typeof SHOPPING_DAY_OPTIONS)[number]["value"];
 interface SettingsPanelProps {
   zipCode: string;
   onZipCodeChange: (zipCode: string) => void;
+  region: ZipRegionInfo;
+  isSyncingZip: boolean;
   isWeekendShopping: boolean;
   onShoppingDayChange: (day: ShoppingDay) => void;
   thresholdCents: number;
@@ -30,6 +33,8 @@ interface SettingsPanelProps {
 export const SettingsPanel = ({
   zipCode,
   onZipCodeChange,
+  region,
+  isSyncingZip,
   isWeekendShopping,
   onShoppingDayChange,
   thresholdCents,
@@ -44,18 +49,26 @@ export const SettingsPanel = ({
     aria-label="Einstellungen"
     className="flex min-w-0 scroll-mt-6 flex-col gap-6 rounded-md bg-panel p-5 sm:p-6"
   >
-    <label className="flex flex-col gap-1.5 text-[15px] font-bold">
-      Postleitzahl
-      <input
-        type="text"
-        value={zipCode}
-        onChange={(event) => onZipCodeChange(event.target.value)}
-        inputMode="numeric"
-        maxLength={5}
-        autoComplete="postal-code"
-        className="h-11 rounded border border-line-strong bg-paper px-3 pt-0.5 text-[17px] font-semibold tabular-nums"
-      />
-    </label>
+    <div className="flex flex-col gap-1.5">
+      <label className="flex flex-col gap-1.5 text-[15px] font-bold">
+        Postleitzahl
+        <input
+          type="text"
+          value={zipCode}
+          onChange={(event) => onZipCodeChange(event.target.value)}
+          inputMode="numeric"
+          maxLength={5}
+          autoComplete="postal-code"
+          aria-describedby="zip-region"
+          className="h-11 rounded border border-line-strong bg-paper px-3 pt-0.5 text-[17px] font-semibold tabular-nums"
+        />
+      </label>
+      <span id="zip-region" className="text-sm text-muted" aria-live="polite">
+        {isSyncingZip
+          ? "Angebote für diese Postleitzahl werden geladen…"
+          : `${region.regionLabel}, ${region.aldiVariant}`}
+      </span>
+    </div>
 
     <div className="flex flex-col gap-1.5">
       <span className="text-[15px] font-bold">Wann kaufst du ein?</span>

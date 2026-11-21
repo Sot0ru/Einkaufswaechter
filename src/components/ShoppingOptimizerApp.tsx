@@ -1,29 +1,60 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ChainScrapeStatus } from "@/lib/providers/chain-scrapers";
 import type { WeekWindow } from "@/lib/providers/demo-offers";
+import {
+  SAMPLE_RECEIPT_TEXT,
+  buildOfferRecordFromReceiptItem,
+  normalizeReceiptLabel,
+  parseReceiptText,
+  type ReceiptAliasEntry,
+} from "@/lib/providers/receipt-importer";
 import { parseBrochureText } from "@/lib/providers/text-importer";
-import { SHOPPING_PRESETS, STORE_MAP, STORES, type StoreId } from "@/lib/rules/catalog";
+import {
+  buildRegionalOffersForZip,
+  isValidGermanZip,
+  resolveZipRegion,
+} from "@/lib/providers/zip-offer-fetcher";
+import {
+  CATEGORY_MAP,
+  SHOPPING_PRESETS,
+  STORE_MAP,
+  STORES,
+  type StoreId,
+} from "@/lib/rules/catalog";
 import {
   type BasketItemInput,
+  formatEuroCents,
   type OfferRecord,
   optimizeShoppingBasket,
 } from "@/lib/rules/optimizer";
+import type { CustomBasePricesMap } from "@/lib/services/base-prices";
+import type { SavedShoppingList } from "@/lib/services/shopping-lists";
+import { type AppTab, BottomNav, LegalFooter, SiteHeader } from "./AppChrome";
 import { CompareView } from "./CompareView";
 import { formatWeekday } from "./format";
 import { InStoreView } from "./InStoreView";
 import { OffersView } from "./OffersView";
 import type { InStoreMode } from "./plan";
+import { ReceiptImportPanel } from "./ReceiptImportPanel";
+import { SavedListsPanel } from "./SavedListsPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { ShoppingListView } from "./ShoppingListView";
-import { cn, RouteIcon } from "./ui";
+import { ZipOffersPanel } from "./ZipOffersPanel";
 
-interface ShoppingOptimizerAppProps {
+export const MOBILE_STORAGE_KEY = "einkaufswaechter_mobile_v1";
+
+export interface ShoppingOptimizerAppProps {
   initialOffers: OfferRecord[];
   weekWindow: WeekWindow;
+  initialCustomBasePrices?: CustomBasePricesMap;
+  initialSavedLists?: SavedShoppingList[];
+  initialReceiptAliases?: ReceiptAliasEntry[];
+  initialBasketItems?: BasketItemInput[];
+  initialZipCode?: string;
+  initialCheckedKeys?: Record<string, boolean>;
 }
-
-type ActiveTab = "compare" | "list" | "instore" | "offers";
 
 const SAMPLE_BROCHURE_TEXT = `Kerrygold Original Irische Butter 250-g-Packung 1,49 €
 Kerrygold Irischer Butterkäse 150-g-Packung 1,79 €
@@ -32,10 +63,25 @@ Metzgerfrisch Rinderhackfleisch 500 g ab Donnerstag 2,79 €
 Erdnussbutter Creamy 350 g 1,99 €`;
 
 const DEFAULT_PRESET_ID = SHOPPING_PRESETS[0].id;
+const INVALID_ZIP_MESSAGE = "Gib eine gültige 5-stellige Postleitzahl ein.";
 
-export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOptimizerAppProps) {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("compare");
-  const [zipCode, setZipCode] = useState("10115");
+export function ShoppingOptimizerApp({
+  initialOffers,
+  weekWindow,
+  initialCustomBasePrices = {},
+  initialSavedLists = [],
+  initialReceiptAliases = [],
+  initialBasketItems,
+  initialZipCode = "10115",
+  initialCheckedKeys = {},
+}: ShoppingOptimizerAppProps) {
+  const [activeTab, setActiveTab] = useState<AppTab>("compare");
+  const [zipCode, setZipCode] = useState(initialZipCode);
+  const [activeZipCode, setActiveZipCode] = useState(initialZipCode);
+  const [zipSyncFeedback, setZipSyncFeedback] = useState<string | null>(null);
+  const [isSyncingZip, setIsSyncingZip] = useState(false);
+  const [isLiveScraping, setIsLiveScraping] = useState(false);
+  const [chainScrapeStatuses, setChainScrapeStatuses] = useState<ChainScrapeStatus[]>([]);
   // Standardmäßig Samstag, damit auch die Donnerstags-Angebote einfließen
   const [shoppingDate, setShoppingDate] = useState<string>(weekWindow.saturday);
   const [secondStoreThresholdCents, setSecondStoreThresholdCents] = useState<number>(500);
@@ -45,18 +91,69 @@ export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOpti
     "kaufland",
     "rewe",
   ]);
-  const [basketItems, setBasketItems] = useState<BasketItemInput[]>([
-    ...SHOPPING_PRESETS[0].items,
-  ]);
-  const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>({});
+  const [basketItems, setBasketItems] = useState<BasketItemInput[]>(
+    initialBasketItems ?? [...SHOPPING_PRESETS[0].items],
+  );
+  const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>(initialCheckedKeys);
   const [searchQuery, setSearchQuery] = useState("");
   const [offers, setOffers] = useState<OfferRecord[]>(initialOffers);
+  const [customBasePrices, setCustomBasePrices] =
+    useState<CustomBasePricesMap>(initialCustomBasePrices);
+  const [priceEditFeedback, setPriceEditFeedback] = useState<string | null>(null);
   const [inStoreMode, setInStoreMode] = useState<InStoreMode>("recommended");
+
+  // Gespeicherte Einkaufslisten
+  const [savedLists, setSavedLists] = useState<SavedShoppingList[]>(initialSavedLists);
+  const [activeListId, setActiveListId] = useState<string | undefined>(undefined);
+  const [listNameInput, setListNameInput] = useState("Mein Wocheneinkauf");
+  const [listSaveFeedback, setListSaveFeedback] = useState<string | null>(null);
+
+  // Kassenbon-Import mit lernendem Kürzel-Wörterbuch
+  const [receiptAliases, setReceiptAliases] =
+    useState<ReceiptAliasEntry[]>(initialReceiptAliases);
+  const [receiptInput, setReceiptInput] = useState(SAMPLE_RECEIPT_TEXT);
+  const [receiptFallbackStoreId, setReceiptFallbackStoreId] = useState<StoreId>("lidl");
+  const [manualReceiptAssignments, setManualReceiptAssignments] = useState<
+    Record<string, string>
+  >({});
+  const [receiptFeedback, setReceiptFeedback] = useState<string | null>(null);
+  const [isImportingReceipt, setIsImportingReceipt] = useState(false);
 
   // Prospekt-Importer
   const [importStoreId, setImportStoreId] = useState<StoreId>("lidl");
   const [brochureInput, setBrochureInput] = useState(SAMPLE_BROCHURE_TEXT);
   const [importFeedback, setImportFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        MOBILE_STORAGE_KEY,
+        JSON.stringify({
+          activeZipCode,
+          secondStoreThresholdCents,
+          enabledStores,
+          enabledLoyaltyApps,
+          basketItems,
+          checkedKeys,
+          customBasePrices,
+          savedLists,
+          receiptAliases,
+        }),
+      );
+    } catch {
+      // localStorage kann im Privatmodus blockiert sein
+    }
+  }, [
+    activeZipCode,
+    secondStoreThresholdCents,
+    enabledStores,
+    enabledLoyaltyApps,
+    basketItems,
+    checkedKeys,
+    customBasePrices,
+    savedLists,
+    receiptAliases,
+  ]);
 
   const optimization = useMemo(
     () =>
@@ -67,8 +164,17 @@ export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOpti
         shoppingDate,
         secondStoreThresholdCents,
         offers,
+        customBasePrices,
       }),
-    [basketItems, enabledStores, enabledLoyaltyApps, shoppingDate, secondStoreThresholdCents, offers],
+    [
+      basketItems,
+      enabledStores,
+      enabledLoyaltyApps,
+      shoppingDate,
+      secondStoreThresholdCents,
+      offers,
+      customBasePrices,
+    ],
   );
 
   const brochurePreview = useMemo(
@@ -80,6 +186,18 @@ export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOpti
       }),
     [brochureInput, importStoreId, shoppingDate],
   );
+
+  const receiptPreview = useMemo(
+    () =>
+      parseReceiptText({
+        text: receiptInput,
+        fallbackStoreId: receiptFallbackStoreId,
+        learnedAliases: receiptAliases,
+      }),
+    [receiptInput, receiptFallbackStoreId, receiptAliases],
+  );
+
+  const currentRegion = useMemo(() => resolveZipRegion(activeZipCode), [activeZipCode]);
 
   const toggleStore = (storeId: StoreId) => {
     setEnabledStores((prev) => {
@@ -151,46 +269,408 @@ export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOpti
     );
   };
 
-  const isWeekendShopping = shoppingDate >= weekWindow.thursday;
+  const applyReceiptImport = async () => {
+    const storeId = receiptPreview.detectedStoreId ?? receiptFallbackStoreId;
+    const effectiveZip =
+      receiptPreview.detectedZipCode && isValidGermanZip(receiptPreview.detectedZipCode)
+        ? receiptPreview.detectedZipCode
+        : activeZipCode;
+    const effectiveDate = receiptPreview.detectedDate ?? shoppingDate;
 
-  const tabs: ReadonlyArray<{ id: ActiveTab; label: string }> = [
-    { id: "compare", label: "Preisvergleich" },
-    { id: "list", label: `Einkaufsliste (${basketItems.length})` },
-    { id: "instore", label: "Im Laden" },
-    { id: "offers", label: "Prospekte" },
-  ];
+    const confirmedItems = receiptPreview.items.flatMap((item) => {
+      const manualCategoryId = manualReceiptAssignments[item.aliasNormalized];
+      const categoryId = manualCategoryId || item.categoryId;
+      if (!categoryId || !CATEGORY_MAP[categoryId]) return [];
+      return [
+        {
+          rawLabel: item.rawLabel,
+          categoryId,
+          regularPriceCents: item.regularPriceCents,
+          effectivePriceCents: item.effectivePriceCents,
+          isOffer: item.isOffer,
+          usedLoyaltyApp: item.usedLoyaltyApp,
+          updateBasePrice: item.suggestBasePriceUpdate || (item.isStoreBrand && !item.isOffer),
+          learnAlias: Boolean(manualCategoryId) || !item.matched,
+          packageAmount: item.packageAmount,
+          packageUnit: item.packageUnit,
+        },
+      ];
+    });
+
+    if (confirmedItems.length === 0) {
+      setReceiptFeedback(
+        "Keine Position ist einer Kategorie zugeordnet. Wähle für unbekannte Kürzel eine Kategorie aus.",
+      );
+      return;
+    }
+
+    setIsImportingReceipt(true);
+
+    // 1. Sofort im Client übernehmen, damit es auch offline in der PWA funktioniert
+    let localBaseUpdates = 0;
+    const localNewOffers: OfferRecord[] = [];
+    const localNewAliases: ReceiptAliasEntry[] = [];
+
+    setCustomBasePrices((prev) => {
+      const next: CustomBasePricesMap = { ...prev };
+      for (const item of confirmedItems) {
+        if (!item.updateBasePrice) continue;
+        const category = CATEGORY_MAP[item.categoryId];
+        if (!category) continue;
+        next[item.categoryId] = {
+          ...(next[item.categoryId] ?? {}),
+          [storeId]: {
+            priceCents: item.regularPriceCents,
+            productLabel: category.defaultBasePrices[storeId].productLabel,
+          },
+        };
+        localBaseUpdates += 1;
+      }
+      return next;
+    });
+
+    for (const item of confirmedItems) {
+      if (item.isOffer) {
+        const offer = buildOfferRecordFromReceiptItem({
+          storeId,
+          categoryId: item.categoryId,
+          rawLabel: item.rawLabel,
+          regularPriceCents: item.regularPriceCents,
+          effectivePriceCents: item.effectivePriceCents,
+          usedLoyaltyApp: item.usedLoyaltyApp,
+          packageAmount: item.packageAmount,
+          packageUnit: item.packageUnit,
+          receiptDate: effectiveDate,
+        });
+        if (offer) localNewOffers.push(offer);
+      }
+
+      if (item.learnAlias) {
+        const normalized = normalizeReceiptLabel(item.rawLabel);
+        if (normalized.length >= 3) {
+          localNewAliases.push({
+            aliasNormalized: normalized,
+            storeId,
+            categoryId: item.categoryId,
+            sampleLabel: item.rawLabel,
+            hitCount: 1,
+          });
+        }
+      }
+    }
+
+    if (localNewOffers.length > 0) {
+      setOffers((prev) => [
+        ...prev.filter(
+          (existing) =>
+            !localNewOffers.some(
+              (offer) =>
+                offer.storeId === existing.storeId && offer.categoryId === existing.categoryId,
+            ),
+        ),
+        ...localNewOffers,
+      ]);
+    }
+
+    if (localNewAliases.length > 0) {
+      setReceiptAliases((prev) => {
+        const byAlias = new Map(prev.map((alias) => [alias.aliasNormalized, alias]));
+        for (const alias of localNewAliases) {
+          const existing = byAlias.get(alias.aliasNormalized);
+          byAlias.set(alias.aliasNormalized, {
+            ...alias,
+            hitCount: (existing?.hitCount ?? 0) + 1,
+          });
+        }
+        return Array.from(byAlias.values());
+      });
+      setManualReceiptAssignments({});
+    }
+
+    const storeName = STORE_MAP[storeId].shortName;
+
+    // 2. Im Hintergrund dauerhaft speichern
+    try {
+      const response = await fetch("/api/v1/receipts/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId,
+          zipCode: effectiveZip,
+          receiptDate: effectiveDate,
+          items: confirmedItems,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.customBasePrices) setCustomBasePrices(data.customBasePrices);
+        if (Array.isArray(data.aliases)) setReceiptAliases(data.aliases);
+        setReceiptFeedback(
+          `Bon von ${storeName} (PLZ ${effectiveZip}) gespeichert: ${data.observationsInserted} Positionen geprüft, ${data.basePricesUpdated} Normalpreise aktualisiert, ${data.offersUpserted} Angebote übernommen, ${data.aliasesLearned} Kürzel gelernt.`,
+        );
+        return;
+      }
+    } catch {
+      // Offline bzw. PWA: lokale Übernahme oben gilt
+    } finally {
+      setIsImportingReceipt(false);
+    }
+
+    setReceiptFeedback(
+      `Bon von ${storeName} (PLZ ${effectiveZip}) übernommen: ${confirmedItems.length} Positionen geprüft, ${localBaseUpdates} Normalpreise aktualisiert, ${localNewOffers.length} Angebote aktiv, ${localNewAliases.length} Kürzel gelernt.`,
+    );
+  };
+
+  const fetchZipOffers = async (targetZipRaw?: string) => {
+    const candidateZip = (targetZipRaw ?? zipCode).trim();
+    if (!isValidGermanZip(candidateZip)) {
+      setZipSyncFeedback(INVALID_ZIP_MESSAGE);
+      return;
+    }
+
+    setZipCode(candidateZip);
+    setActiveZipCode(candidateZip);
+    const region = resolveZipRegion(candidateZip);
+    const regionText = `${region.regionLabel}, ${region.aldiVariant}`;
+
+    // 1. Sofort deterministisch aktualisieren, damit die Oberfläche nicht wartet
+    const regionalOffers = buildRegionalOffersForZip(candidateZip, shoppingDate);
+    setOffers(regionalOffers);
+    setIsSyncingZip(true);
+
+    // 2. Im Hintergrund mit der Datenbank abgleichen
+    try {
+      const response = await fetch(
+        `/api/v1/offers?zipCode=${encodeURIComponent(candidateZip)}&date=${encodeURIComponent(shoppingDate)}`,
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data.offers) && data.offers.length > 0) {
+          setOffers(data.offers);
+        }
+      }
+      setZipSyncFeedback(
+        `${regionalOffers.length} Wochenangebote für PLZ ${candidateZip} geladen. ${regionText}.`,
+      );
+    } catch {
+      setZipSyncFeedback(
+        `${regionalOffers.length} regionale Wochenangebote für PLZ ${candidateZip} geladen. ${regionText}.`,
+      );
+    } finally {
+      setIsSyncingZip(false);
+    }
+  };
+
+  const changeZipCode = (rawValue: string, autoFetch: boolean) => {
+    const digits = rawValue.replace(/\D/g, "").slice(0, 5);
+    setZipCode(digits);
+    if (autoFetch && digits.length === 5) {
+      void fetchZipOffers(digits);
+    }
+  };
+
+  const triggerLiveScrape = async () => {
+    const candidateZip = zipCode.trim();
+    if (!isValidGermanZip(candidateZip)) {
+      setZipSyncFeedback(INVALID_ZIP_MESSAGE);
+      return;
+    }
+
+    setIsLiveScraping(true);
+    setZipSyncFeedback(null);
+    try {
+      const response = await fetch("/api/v1/offers/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "live_chains",
+          zipCode: candidateZip,
+          referenceDate: shoppingDate,
+          stores: enabledStores,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data.offers) && data.offers.length > 0) {
+          setOffers(data.offers);
+        }
+        if (Array.isArray(data.chainStatuses)) {
+          setChainScrapeStatuses(data.chainStatuses);
+        }
+        setActiveZipCode(candidateZip);
+        setZipSyncFeedback(
+          `Live-Abruf abgeschlossen: ${data.liveChainCount ?? 0} Ketten live erreicht, ${data.liveScrapedOfferCount ?? 0} Live-Treffer, insgesamt ${data.offers?.length ?? offers.length} Angebote für PLZ ${candidateZip}.`,
+        );
+        return;
+      }
+      setZipSyncFeedback(
+        "Der Live-Abruf braucht den Server (/api/v1/offers/scrape). Bis dahin gilt der Regionalkatalog.",
+      );
+    } catch {
+      setZipSyncFeedback(
+        "Ohne Serververbindung ist kein Live-Abruf möglich. Der Regionalkatalog bleibt aktiv.",
+      );
+    } finally {
+      setIsLiveScraping(false);
+    }
+  };
+
+  const saveCurrentList = async (asNew: boolean) => {
+    const trimmedName = listNameInput.trim();
+    if (!trimmedName) {
+      setListSaveFeedback("Gib der Liste einen Namen.");
+      return;
+    }
+    if (basketItems.length === 0) {
+      setListSaveFeedback("Deine Einkaufsliste ist leer, es gibt nichts zu speichern.");
+      return;
+    }
+
+    const payload = {
+      id: asNew ? undefined : activeListId,
+      name: trimmedName,
+      zipCode: activeZipCode,
+      shoppingDate,
+      secondStoreThresholdCents,
+      items: basketItems.map((item) => ({
+        categoryId: item.categoryId,
+        quantity: item.quantity,
+        checked: false,
+      })),
+    };
+
+    try {
+      const response = await fetch("/api/v1/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data.lists)) setSavedLists(data.lists);
+        if (data.list?.id) setActiveListId(data.list.id);
+        setListSaveFeedback(`Liste „${trimmedName}“ gespeichert.`);
+        return;
+      }
+    } catch {
+      // Lokal speichern, siehe unten
+    }
+
+    const fallbackId = (!asNew && activeListId) || `local-${Date.now()}`;
+    const localEntry: SavedShoppingList = {
+      id: fallbackId,
+      name: trimmedName,
+      zipCode: activeZipCode,
+      shoppingDate,
+      secondStoreThresholdCents,
+      createdAt: new Date().toISOString(),
+      items: payload.items,
+    };
+    setSavedLists((prev) => [localEntry, ...prev.filter((list) => list.id !== fallbackId)]);
+    setActiveListId(fallbackId);
+    setListSaveFeedback(`Liste „${trimmedName}“ auf diesem Gerät gespeichert.`);
+  };
+
+  const loadSavedList = (list: SavedShoppingList) => {
+    setBasketItems(list.items.map((item) => ({ categoryId: item.categoryId, quantity: item.quantity })));
+    setActiveListId(list.id);
+    setListNameInput(list.name);
+    setSecondStoreThresholdCents(list.secondStoreThresholdCents);
+    setCheckedKeys({});
+    if (list.zipCode && list.zipCode !== activeZipCode) {
+      void fetchZipOffers(list.zipCode);
+    }
+    setListSaveFeedback(`Liste „${list.name}“ geladen.`);
+  };
+
+  const deleteSavedList = async (listId: string) => {
+    setSavedLists((prev) => prev.filter((list) => list.id !== listId));
+    if (activeListId === listId) setActiveListId(undefined);
+    try {
+      await fetch(`/api/v1/lists?id=${encodeURIComponent(listId)}`, { method: "DELETE" });
+    } catch {
+      // Lokal bereits entfernt
+    }
+  };
+
+  const adjustBasePrice = async (categoryId: string, storeId: StoreId, deltaCents: number) => {
+    const category = CATEGORY_MAP[categoryId];
+    if (!category) return;
+    const currentEntry =
+      customBasePrices[categoryId]?.[storeId] ?? category.defaultBasePrices[storeId];
+    const nextPriceCents = Math.max(10, currentEntry.priceCents + deltaCents);
+
+    setCustomBasePrices((prev) => ({
+      ...prev,
+      [categoryId]: {
+        ...(prev[categoryId] ?? {}),
+        [storeId]: { priceCents: nextPriceCents, productLabel: currentEntry.productLabel },
+      },
+    }));
+    setPriceEditFeedback(
+      `Normalpreis für ${category.name} bei ${STORE_MAP[storeId].shortName}: jetzt ${formatEuroCents(nextPriceCents)}.`,
+    );
+
+    try {
+      await fetch("/api/v1/base-prices", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId,
+          storeId,
+          priceCents: nextPriceCents,
+          productLabel: currentEntry.productLabel,
+        }),
+      });
+    } catch {
+      // Lokale Änderung gilt bereits
+    }
+  };
+
+  const resetBasePrice = async (categoryId: string, storeId: StoreId) => {
+    const category = CATEGORY_MAP[categoryId];
+    if (!category) return;
+    const defaultEntry = category.defaultBasePrices[storeId];
+
+    setCustomBasePrices((prev) => {
+      const nextCategory = { ...(prev[categoryId] ?? {}) };
+      delete nextCategory[storeId];
+      const nextMap = { ...prev };
+      if (Object.keys(nextCategory).length === 0) {
+        delete nextMap[categoryId];
+      } else {
+        nextMap[categoryId] = nextCategory;
+      }
+      return nextMap;
+    });
+    setPriceEditFeedback(
+      `Normalpreis für ${category.name} bei ${STORE_MAP[storeId].shortName} wieder auf Standard (${formatEuroCents(defaultEntry.priceCents)}).`,
+    );
+
+    try {
+      await fetch("/api/v1/base-prices", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId, storeId, resetToDefault: true }),
+      });
+    } catch {
+      // Lokale Änderung gilt bereits
+    }
+  };
+
+  const isWeekendShopping = shoppingDate >= weekWindow.thursday;
+  const busyFetching = isSyncingZip || isLiveScraping;
 
   return (
     <>
-      <header className="bg-sign text-sign-ink">
-        <div className="mx-auto flex min-h-[68px] max-w-7xl flex-wrap items-center justify-between gap-x-8 px-4 sm:px-6 lg:px-10">
-          <div className="flex items-center gap-2.5 py-2.5">
-            <RouteIcon className="size-7" />
-            <span className="text-[21px] font-extrabold tracking-tight">Einkaufswächter</span>
-          </div>
-          <nav aria-label="Ansichten" className="flex flex-wrap gap-1 pb-3 sm:py-2.5">
-            {tabs.map((tab) => {
-              const active = tab.id === activeTab;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "inline-flex min-h-11 items-center rounded px-3.5 pt-0.5 text-[15px] transition sm:px-4",
-                    active ? "bg-sign-ink font-extrabold text-sign" : "font-semibold hover:bg-white/10",
-                  )}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </header>
+      <SiteHeader
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        listCount={basketItems.length}
+        activeZipCode={activeZipCode}
+      />
 
-      <main className="mx-auto max-w-7xl px-4 pb-20 pt-8 sm:px-6 sm:pt-10 lg:px-10">
+      <main className="mx-auto max-w-7xl px-4 pb-10 pt-8 sm:px-6 sm:pt-10 lg:px-10">
         {activeTab === "compare" && (
           <div className="grid items-start gap-10 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-12">
             <div className="min-w-0 lg:col-start-2 lg:row-start-1">
@@ -205,7 +685,9 @@ export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOpti
             <div className="lg:col-start-1 lg:row-start-1">
               <SettingsPanel
                 zipCode={zipCode}
-                onZipCodeChange={setZipCode}
+                onZipCodeChange={(value) => changeZipCode(value, true)}
+                region={currentRegion}
+                isSyncingZip={busyFetching}
                 isWeekendShopping={isWeekendShopping}
                 onShoppingDayChange={(day) =>
                   setShoppingDate(day === "weekend" ? weekWindow.saturday : weekWindow.monday)
@@ -229,6 +711,18 @@ export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOpti
             onLoadPreset={loadPreset}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            savedListsPanel={
+              <SavedListsPanel
+                savedLists={savedLists}
+                activeListId={activeListId}
+                listName={listNameInput}
+                onListNameChange={setListNameInput}
+                onSave={(asNew) => void saveCurrentList(asNew)}
+                onLoad={loadSavedList}
+                onDelete={(listId) => void deleteSavedList(listId)}
+                feedback={listSaveFeedback}
+              />
+            }
           />
         )}
 
@@ -239,23 +733,67 @@ export function ShoppingOptimizerApp({ initialOffers, weekWindow }: ShoppingOpti
             onModeChange={setInStoreMode}
             checkedKeys={checkedKeys}
             onToggleChecked={toggleChecked}
+            customBasePrices={customBasePrices}
+            onAdjustBasePrice={(categoryId, storeId, deltaCents) =>
+              void adjustBasePrice(categoryId, storeId, deltaCents)
+            }
+            onResetBasePrice={(categoryId, storeId) => void resetBasePrice(categoryId, storeId)}
+            priceEditFeedback={priceEditFeedback}
           />
         )}
 
         {activeTab === "offers" && (
-          <OffersView
-            offers={offers}
-            weekWindow={weekWindow}
-            importStoreId={importStoreId}
-            onImportStoreChange={setImportStoreId}
-            brochureInput={brochureInput}
-            onBrochureInputChange={setBrochureInput}
-            preview={brochurePreview}
-            feedback={importFeedback}
-            onApplyImport={applyBrochureImport}
-          />
+          <div className="flex flex-col gap-14">
+            <ZipOffersPanel
+              zipCode={zipCode}
+              onZipCodeChange={(value) => changeZipCode(value, false)}
+              activeZipCode={activeZipCode}
+              region={currentRegion}
+              onFetchOffers={(zip) => void fetchZipOffers(zip)}
+              onLiveScrape={() => void triggerLiveScrape()}
+              isSyncing={isSyncingZip}
+              isLiveScraping={isLiveScraping}
+              feedback={zipSyncFeedback}
+              chainStatuses={chainScrapeStatuses}
+            />
+            <ReceiptImportPanel
+              receiptInput={receiptInput}
+              onReceiptInputChange={setReceiptInput}
+              preview={receiptPreview}
+              fallbackStoreId={receiptFallbackStoreId}
+              onFallbackStoreChange={setReceiptFallbackStoreId}
+              activeZipCode={activeZipCode}
+              shoppingDate={shoppingDate}
+              manualAssignments={manualReceiptAssignments}
+              onAssign={(alias, categoryId) =>
+                setManualReceiptAssignments((prev) => ({ ...prev, [alias]: categoryId }))
+              }
+              learnedAliasCount={receiptAliases.length}
+              isImporting={isImportingReceipt}
+              onImport={() => void applyReceiptImport()}
+              feedback={receiptFeedback}
+            />
+            <OffersView
+              offers={offers}
+              weekWindow={weekWindow}
+              importStoreId={importStoreId}
+              onImportStoreChange={setImportStoreId}
+              brochureInput={brochureInput}
+              onBrochureInputChange={setBrochureInput}
+              preview={brochurePreview}
+              feedback={importFeedback}
+              onApplyImport={applyBrochureImport}
+            />
+          </div>
         )}
       </main>
+
+      <LegalFooter />
+      <BottomNav
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        listCount={basketItems.length}
+      />
     </>
   );
 }

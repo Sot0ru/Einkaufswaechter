@@ -35,9 +35,9 @@ export const OffersView = ({
   return (
     <div className="grid items-start gap-8 lg:grid-cols-2">
       <section aria-labelledby="import-title" className="min-w-0">
-        <h1 id="import-title" className="text-[26px] font-black tracking-tight">
+        <h2 id="import-title" className="text-[26px] leading-tight font-black tracking-tight">
           Prospekt-Zeilen prüfen
-        </h1>
+        </h2>
         <p className="mt-2 max-w-prose text-[15px]">
           Füge Zeilen aus einem Wochenprospekt ein. Der Regel-Matcher erkennt Kategorie,
           Packungsgröße, Grundpreis und „ab Donnerstag“ und lässt Fallen wie „Butterkäse“ oder
@@ -70,9 +70,9 @@ export const OffersView = ({
           />
         </label>
 
-        <h2 className="mt-5 text-[15px] font-bold" aria-live="polite">
+        <h3 className="mt-5 text-[15px] font-bold" aria-live="polite">
           {matchedCount} von {preview.length} Zeilen erkannt
-        </h2>
+        </h3>
         <ul className="mt-2 flex flex-col gap-1.5">
           {preview.map((result, index) => (
             <li
@@ -110,7 +110,7 @@ export const OffersView = ({
       </section>
 
       <section aria-labelledby="offers-title" className="min-w-0">
-        <h2 id="offers-title" className="text-[26px] font-black tracking-tight">
+        <h2 id="offers-title" className="text-[26px] leading-tight font-black tracking-tight">
           Wochenangebote
         </h2>
         <p className="mt-2 text-[15px]">

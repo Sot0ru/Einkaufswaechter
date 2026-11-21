@@ -88,3 +88,42 @@ export const shoppingListItems = pgTable("shopping_list_items", {
   quantity: integer("quantity").default(1).notNull(),
   checked: boolean("checked").default(false).notNull(),
 });
+
+export const offerFetchRuns = pgTable("offer_fetch_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  zipCode: text("zip_code").notNull(),
+  regionCode: text("region_code").notNull(),
+  source: text("source").notNull(),
+  referenceDate: date("reference_date", { mode: "string" }).notNull(),
+  fetchedRawCount: integer("fetched_raw_count").default(0).notNull(),
+  matchedCount: integer("matched_count").default(0).notNull(),
+  upsertedCount: integer("upserted_count").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const receiptAliases = pgTable("receipt_aliases", {
+  aliasNormalized: text("alias_normalized").primaryKey(),
+  storeId: text("store_id"),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  sampleLabel: text("sample_label").notNull(),
+  hitCount: integer("hit_count").default(1).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const receiptObservations = pgTable("receipt_observations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  storeId: text("store_id")
+    .notNull()
+    .references(() => stores.id, { onDelete: "cascade" }),
+  zipCode: text("zip_code").default("10115").notNull(),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  rawLabel: text("raw_label").notNull(),
+  priceCents: integer("price_cents").notNull(),
+  isOffer: boolean("is_offer").default(false).notNull(),
+  receiptDate: date("receipt_date", { mode: "string" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

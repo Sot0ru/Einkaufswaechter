@@ -2,14 +2,32 @@
 
 ## Aktueller Status
 
-- **Initiales Grundgerüst (Ausbaustufe 1):** Aufgesetzt durch Antigravity.
-- **Enthalten:**
+- **Ausbaustufe 1 (Fundament & Optimierungs-Kern):** Abgeschlossen auf `main`.
   - Next.js 16 + TypeScript + Tailwind v4 + Drizzle ORM (PGlite lokal / Postgres produktiv) + Vitest.
   - Regelbasierter Angebots-Matcher (`src/lib/rules/matcher.ts`) ohne externe KI-API.
   - Warenkorb-Optimierer (`src/lib/rules/optimizer.ts`) für 1-Laden-Ranking, 2-Läden-Smart-Split (mit Hauptladen-Tie-Breaking und Ersparnis-Schwelle) sowie Abteilungs-Laufroute.
   - Interaktive Web-Oberfläche + JSON-API (`/api/v1/optimize`, `/api/v1/offers/import`).
-- **Oberfläche „Laufroute“ (Ausbaustufe 2):** Umgesetzt durch Claude auf Wunsch des Projektinhabers.
+- **Ausbaustufe 2 – Paket 1 (Katalog-Erweiterung auf 172 Alltags-Kategorien):** Umgesetzt durch Antigravity.
+  - Katalog (`src/lib/rules/catalog.ts`) auf **172 normierte Alltags-Kategorien** über alle 8 Supermarkt-Abteilungen erweitert.
+  - Matcher (`src/lib/rules/matcher.ts`) um Wortgrenzen-Erkennung bei kurzen Include-/Exclude-Keywords, `(100 g = ...)`-Grundpreis-Bereinigung, Stück-Einheiten (`Tabs`, `Pads`, `WL`) und Packungsgrößen-Nähe-Scoring ergänzt.
+  - Vollständige Invarianten- und Selbst-Matching-Tests über alle 172 Kategorien in `src/lib/__tests__/matcher.test.ts`.
+- **Ausbaustufe 2 – Paket 2 (Automatischer Angebots-Fetcher nach PLZ):** Umgesetzt durch Antigravity.
+  - `src/lib/providers/zip-offer-fetcher.ts` & `src/lib/providers/zip-offer-sync.ts`: PLZ-Validierung, Zuordnung zu den 5 deutschen Handelsregionen (`ost`, `nord`, `west`, `suedwest`, `sued`) inkl. Aldi-Äquator (`Aldi Nord` vs. `Aldi Süd`), externer JSON-Feed-Adapter (`OFFER_FEED_URL`) mit deterministischem Regional-Fallback, idempotente DB-Migration (`offer_fetch_runs`).
+  - API-Routen `GET/POST /api/cron/fetch-offers` und `GET /api/v1/offers?zipCode=...` + Tests in `src/lib/__tests__/zip-offer-fetcher.test.ts`.
+- **Ausbaustufe 2 – Paket 3 (Persistente Einkaufslisten & 1-Klick-Basispreis-Korrektur im Laden):** Umgesetzt durch Antigravity.
+  - `src/lib/services/shopping-lists.ts` & `GET/POST/DELETE /api/v1/lists`: Einkaufslisten dauerhaft in `shopping_lists` und `shopping_list_items` speichern, aktualisieren, wiederladen und löschen.
+  - `src/lib/services/base-prices.ts` & `GET/PATCH/POST /api/v1/base-prices`: 1-Klick-Basispreis-Korrektur je Kette und Kategorie direkt aus der Supermarkt-Abhakliste (`−10 ct` / `+10 ct` / `Standard`).
+  - Vollständige Unit- und DB-Tests in `src/lib/__tests__/persistence.test.ts`.
+- **Ausbaustufe 2 – Paket 4 (Kassenbon / E-Bon Crowdsourcing & Mobile PWA):** Umgesetzt durch Antigravity.
+  - `src/lib/providers/receipt-importer.ts` & `src/lib/services/receipts.ts` & `GET/POST /api/v1/receipts/import`: Deterministischer deutscher Kassenbon-Parser (Kopf-Erkennung für Kette/PLZ/Datum, Pfand-/Summen-Filter, Wiegeware `kg × €/kg`, Mehrfachmengen `2 ×`, Rabatt-Zeilen für gleichzeitiges Basispreis- & App-Angebots-Update) sowie selbstlernendes Kürzel-Wörterbuch (`receipt_aliases`) mit 1-Klick-Zuordnung in der UI.
+  - Idempotente DB-Migration für `receipt_aliases` und `receipt_observations` in `src/db/migrate.ts` + Tests in `src/lib/__tests__/receipt-importer.test.ts`.
+  - Mobile-PWA-Unterstützung (Bottom-Navigation, `manifest.webmanifest`, Service Worker, `localStorage`-Persistenz, rechtlicher Transparenz-Footer) + `gh-pages` Live-Build.
+- **Ausbaustufe 2 – Paket 5 (Sortiments-Ausbau auf 240 Kategorien & 7-Ketten Live-Scraper-Engine):** Umgesetzt durch Antigravity.
+  - Sortiment über `src/lib/rules/catalog-extended.ts` und `src/lib/rules/catalog.ts` von 172 auf **240 normierte Alltags-Kategorien** über alle 8 Abteilungen ausgebaut (Bio, Saison-Obst/-Gemüse, Bäckerei, Kühlregal, Fleisch/Fisch/Vegan, Vorrat/Backen/Süßes, Tiefkühl, Getränke/Kaffee, Haushalt/Drogerie/Tierbedarf).
+  - `src/lib/providers/chain-scrapers.ts` & `POST /api/v1/offers/scrape` & `/api/cron/fetch-offers?live=true`: Respektvoller 7-Ketten-Live-Scraper (JSON-LD `schema.org/Product`, `__NEXT_DATA__`/Embedded-JSON, HTML-Angebotskacheln, Aldi-Äquator Nord/Süd, strikte Anti-Bot-/CAPTCHA-Erkennung ohne Bypass) integriert in `syncOffersForZipCode` (`src/lib/providers/zip-offer-sync.ts`) und Tab 4 (`ShoppingOptimizerApp.tsx`) mit transparentem Live-/Fallback-Status pro Kette.
+  - Vollständige Tests in `src/lib/__tests__/chain-scrapers.test.ts` und `src/lib/__tests__/matcher.test.ts`.
+- **Oberfläche „Laufroute“:** Umgesetzt durch Claude auf Wunsch des Projektinhabers, aufbauend auf Ausbaustufe 2.
   - Designrichtung: Der Einkauf als Linienplan. Abteilungen sind Haltestellen in Laufroutenreihenfolge, Blau steht für den Hauptladen, Orange ausschließlich für den Abstecher zum Zweitladen. Heller und dunkler Modus.
   - Schrift Overpass, selbst gehostet über `@fontsource-variable/overpass` und `next/font/local` (Build ohne Netzwerkzugriff).
-  - `ShoppingOptimizerApp.tsx` in Teilkomponenten aufgeteilt (`CompareView`, `RoutePlan`, `InStoreView`, `ShoppingListView`, `OffersView`, `SettingsPanel`, `ui.tsx`); die Optimierungslogik ist unverändert.
-  - Katalog um `shortName` für Kategorien und Abteilungen ergänzt (Beschriftung im Linienplan).
+  - `ShoppingOptimizerApp.tsx` in Teilkomponenten aufgeteilt (`CompareView`, `RoutePlan`, `InStoreView`, `ShoppingListView`, `OffersView`, `SettingsPanel`, `ui.tsx`); die Optimierungslogik ist unverändert. Alle UI-Funktionen aus Ausbaustufe 2 (PLZ-Fetcher, Live-Scraper, Kassenbon-Import, gespeicherte Listen, Basispreis-Korrektur, Bottom-Navigation, `localStorage`, Rechtshinweis) sind in das neue Design übertragen.
+  - Katalog um optionale Kurznamen (`shortName`) für Kategorien und Pflicht-Kurznamen für Abteilungen ergänzt (Beschriftung im Linienplan); fehlt ein Kurzname, wird er aus dem Kategorienamen abgeleitet.

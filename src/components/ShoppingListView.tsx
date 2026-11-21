@@ -1,13 +1,15 @@
-import { useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
   CATEGORIES,
   CATEGORY_MAP,
   type CategoryDefinition,
+  type DepartmentId,
   DEPARTMENTS,
   SHOPPING_PRESETS,
 } from "@/lib/rules/catalog";
 import { type BasketItemInput, formatEuroCents } from "@/lib/rules/optimizer";
-import { cn } from "./ui";
+import { categoryShortName } from "./format";
+import { cn, ToggleChip } from "./ui";
 
 interface ShoppingListViewProps {
   basketItems: readonly BasketItemInput[];
@@ -16,10 +18,16 @@ interface ShoppingListViewProps {
   onLoadPreset: (presetId: string) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  savedListsPanel: ReactNode;
 }
 
 const cheapestBasePriceCents = (category: CategoryDefinition): number =>
   Math.min(...Object.values(category.defaultBasePrices).map((entry) => entry.priceCents));
+
+const matchesQuery = (category: CategoryDefinition, query: string): boolean =>
+  category.name.toLowerCase().includes(query) ||
+  category.subtitle.toLowerCase().includes(query) ||
+  category.includeKeywords.some((keyword) => keyword.includes(query));
 
 const STEPPER_BUTTON =
   "flex size-11 items-center justify-center rounded border border-line-strong bg-paper text-lg font-bold transition hover:border-route";
@@ -31,88 +39,93 @@ export const ShoppingListView = ({
   onLoadPreset,
   searchQuery,
   onSearchChange,
+  savedListsPanel,
 }: ShoppingListViewProps) => {
+  const [selectedDepartment, setSelectedDepartment] = useState<DepartmentId | "all">("all");
+
   const filteredCatalog = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return CATEGORIES;
-    return CATEGORIES.filter(
-      (category) =>
-        category.name.toLowerCase().includes(query) ||
-        category.subtitle.toLowerCase().includes(query) ||
-        category.includeKeywords.some((keyword) => keyword.includes(query)),
-    );
+    return query ? CATEGORIES.filter((category) => matchesQuery(category, query)) : CATEGORIES;
   }, [searchQuery]);
 
   const quantityById = new Map(basketItems.map((item) => [item.categoryId, item.quantity]));
+  const visibleDepartments = DEPARTMENTS.filter(
+    (department) => selectedDepartment === "all" || selectedDepartment === department.id,
+  );
 
   return (
     <div className="grid items-start gap-8 lg:grid-cols-12">
-      <section aria-labelledby="list-title" className="rounded-md bg-panel p-5 sm:p-6 lg:col-span-5">
-        <div className="flex items-baseline justify-between gap-3">
-          <h1 id="list-title" className="text-[26px] font-black tracking-tight">
-            Deine Einkaufsliste
-          </h1>
-          {basketItems.length > 0 && (
-            <button
-              type="button"
-              onClick={onClear}
-              className="min-h-11 text-[15px] font-bold text-route underline underline-offset-4"
-            >
-              Liste leeren
-            </button>
-          )}
-        </div>
-        <p className="text-[15px] text-muted">{basketItems.length} Artikel</p>
+      <div className="flex min-w-0 flex-col gap-6 rounded-md bg-panel p-5 sm:p-6 lg:col-span-5">
+        <section aria-labelledby="list-title">
+          <div className="flex items-baseline justify-between gap-3">
+            <h1 id="list-title" className="text-[26px] leading-tight font-black tracking-tight">
+              Deine Einkaufsliste
+            </h1>
+            {basketItems.length > 0 && (
+              <button
+                type="button"
+                onClick={onClear}
+                className="min-h-11 text-[15px] font-bold text-route underline underline-offset-4"
+              >
+                Liste leeren
+              </button>
+            )}
+          </div>
+          <p className="text-[15px] text-muted">{basketItems.length} Artikel</p>
 
-        {basketItems.length === 0 ? (
-          <p className="mt-5 text-[17px]">
-            Noch leer. Wähle rechts Artikel aus oder starte mit einer Vorlage.
-          </p>
-        ) : (
-          <ul className="mt-4 divide-y divide-line-strong">
-            {basketItems.map((item) => {
-              const category = CATEGORY_MAP[item.categoryId];
-              if (!category) return null;
-              return (
-                <li key={item.categoryId} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="font-bold">{category.name}</p>
-                    <p className="text-sm text-muted">{category.subtitle}</p>
-                  </div>
-                  <div className="flex flex-none items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => onChangeQuantity(item.categoryId, -1)}
-                      aria-label={`${category.shortName} reduzieren`}
-                      className={STEPPER_BUTTON}
-                    >
-                      −
-                    </button>
-                    <span className="w-7 pt-0.5 text-center font-extrabold tabular-nums" aria-live="polite">
-                      {item.quantity}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onChangeQuantity(item.categoryId, 1)}
-                      aria-label={`${category.shortName} erhöhen`}
-                      className={STEPPER_BUTTON}
-                    >
-                      +
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+          {basketItems.length === 0 ? (
+            <p className="mt-5 text-[17px]">
+              Noch leer. Wähle Artikel aus dem Sortiment oder starte mit einer Vorlage.
+            </p>
+          ) : (
+            <ul className="mt-4 divide-y divide-line-strong">
+              {basketItems.map((item) => {
+                const category = CATEGORY_MAP[item.categoryId];
+                if (!category) return null;
+                const shortName = categoryShortName(category);
+                return (
+                  <li key={item.categoryId} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="font-bold">{category.name}</p>
+                      <p className="text-sm text-muted">{category.subtitle}</p>
+                    </div>
+                    <div className="flex flex-none items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onChangeQuantity(item.categoryId, -1)}
+                        aria-label={`${shortName} reduzieren`}
+                        className={STEPPER_BUTTON}
+                      >
+                        −
+                      </button>
+                      <span className="w-7 pt-0.5 text-center font-extrabold tabular-nums">
+                        {item.quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onChangeQuantity(item.categoryId, 1)}
+                        aria-label={`${shortName} erhöhen`}
+                        className={STEPPER_BUTTON}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        {savedListsPanel}
+      </div>
 
       <div className="flex min-w-0 flex-col gap-8 lg:col-span-7">
         <section aria-labelledby="presets-title">
           <h2 id="presets-title" className="text-xl font-black">
             Vorlagen
           </h2>
-          <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+          <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
             {SHOPPING_PRESETS.map((preset) => (
               <button
                 key={preset.id}
@@ -130,7 +143,10 @@ export const ShoppingListView = ({
         <section aria-labelledby="catalog-title">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <h2 id="catalog-title" className="text-xl font-black">
-              Artikel hinzufügen
+              Sortiment{" "}
+              <span className="font-semibold text-muted tabular-nums">
+                ({CATEGORIES.length} Kategorien)
+              </span>
             </h2>
             <label className="sm:w-72">
               <span className="sr-only">Artikel suchen</span>
@@ -144,14 +160,39 @@ export const ShoppingListView = ({
             </label>
           </div>
 
+          <fieldset className="mt-4">
+            <legend className="sr-only">Nach Abteilung filtern</legend>
+            <div className="flex flex-wrap gap-1.5">
+              <ToggleChip
+                active={selectedDepartment === "all"}
+                onToggle={() => setSelectedDepartment("all")}
+              >
+                Alle ({filteredCatalog.length})
+              </ToggleChip>
+              {DEPARTMENTS.map((department) => {
+                const count = filteredCatalog.filter((c) => c.department === department.id).length;
+                if (count === 0) return null;
+                return (
+                  <ToggleChip
+                    key={department.id}
+                    active={selectedDepartment === department.id}
+                    onToggle={() => setSelectedDepartment(department.id)}
+                  >
+                    {department.shortName} ({count})
+                  </ToggleChip>
+                );
+              })}
+            </div>
+          </fieldset>
+
           {filteredCatalog.length === 0 && (
             <p className="mt-5 text-[17px]">
               Kein Artikel passt zu „{searchQuery}“. Versuch es mit einem allgemeineren Begriff.
             </p>
           )}
 
-          <ol className="mt-5 flex flex-col gap-6">
-            {DEPARTMENTS.map((department) => {
+          <ol className="mt-6 flex flex-col gap-6">
+            {visibleDepartments.map((department) => {
               const categories = filteredCatalog.filter((c) => c.department === department.id);
               if (categories.length === 0) return null;
               return (

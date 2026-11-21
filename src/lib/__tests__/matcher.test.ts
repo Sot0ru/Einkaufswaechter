@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseBrochureText } from "@/lib/providers/text-importer";
+import { CATEGORIES, DEPARTMENTS, STORES } from "@/lib/rules/catalog";
 import {
   computeUnitPriceCents,
   detectLoyaltyRequirement,
@@ -8,6 +9,76 @@ import {
 } from "@/lib/rules/matcher";
 
 describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
+  it("umfasst mindestens 230 valide, eindeutig konfigurierte Alltags-Kategorien über alle 8 Abteilungen", () => {
+    expect(CATEGORIES.length).toBeGreaterThanOrEqual(230);
+    expect(CATEGORIES.length).toBeLessThanOrEqual(300);
+
+    const seenIds = new Set<string>();
+    for (const cat of CATEGORIES) {
+      expect(seenIds.has(cat.id)).toBe(false);
+      seenIds.add(cat.id);
+
+      expect(cat.includeKeywords.length).toBeGreaterThan(0);
+      for (const kw of cat.includeKeywords) {
+        expect(kw).toBe(kw.toLowerCase());
+        expect(kw.trim().length).toBeGreaterThan(0);
+      }
+      for (const ex of cat.excludeKeywords) {
+        expect(ex).toBe(ex.toLowerCase());
+        for (const inc of cat.includeKeywords) {
+          expect(
+            inc.includes(ex),
+            `${cat.id}: includeKeyword "${inc}" darf nicht excludeKeyword "${ex}" enthalten`,
+          ).toBe(false);
+        }
+      }
+
+      expect(cat.minPlausiblePriceCents).toBeGreaterThan(0);
+      expect(cat.maxPlausiblePriceCents).toBeGreaterThan(cat.minPlausiblePriceCents);
+
+      for (const store of STORES) {
+        const base = cat.defaultBasePrices[store.id];
+        expect(base).toBeDefined();
+        expect(base.productLabel.length).toBeGreaterThan(2);
+        expect(base.priceCents).toBeGreaterThanOrEqual(cat.minPlausiblePriceCents);
+        expect(base.priceCents).toBeLessThanOrEqual(cat.maxPlausiblePriceCents);
+      }
+    }
+
+    for (const dept of DEPARTMENTS) {
+      const countInDept = CATEGORIES.filter((c) => c.department === dept.id).length;
+      expect(countInDept).toBeGreaterThanOrEqual(18);
+    }
+  });
+
+  it("ordnet für jede der 240 Kategorien alle hinterlegten includeKeywords deterministisch der richtigen Kategorie zu", () => {
+    for (const cat of CATEGORIES) {
+      const unitLabel =
+        cat.unit === "g" ? "g" : cat.unit === "ml" ? "ml" : "Stück";
+      const offerPrice = Math.max(
+        cat.minPlausiblePriceCents,
+        Math.round(cat.defaultBasePrices.lidl.priceCents * 0.85),
+      );
+
+      for (const keyword of cat.includeKeywords) {
+        const matched = matchOfferToCategory({
+          title: `Wochenknaller ${keyword}`,
+          description: `${cat.standardAmount} ${unitLabel} zum Aktionspreis`,
+          priceCents: offerPrice,
+        });
+
+        expect(
+          matched,
+          `Kategorie ${cat.id} wurde für Keyword "${keyword}" nicht erkannt`,
+        ).not.toBeNull();
+        expect(
+          matched?.categoryId,
+          `Keyword "${keyword}" von ${cat.id} wurde fälschlich ${matched?.categoryId} zugeordnet`,
+        ).toBe(cat.id);
+      }
+    }
+  });
+
   it("ordnet echte Markenbutter-Angebote zuverlässig der Kategorie butter_250g zu", () => {
     const result = matchOfferToCategory({
       title: "Kerrygold Original Irische Butter",
@@ -30,24 +101,115 @@ describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
     });
     expect(butterkaese?.categoryId).not.toBe("butter_250g");
 
+    // Erdnussbutter hat jetzt ihre eigene Kategorie und landet niemals bei butter_250g
     const erdnussbutter = matchOfferToCategory({
       title: "American Erdnussbutter Creamy",
-      description: "250-g-Glas",
+      description: "350-g-Glas",
       priceCents: 179,
     });
-    expect(erdnussbutter).toBeNull();
+    expect(erdnussbutter?.categoryId).toBe("erdnussbutter_350g");
 
+    // Buttermilch hat jetzt ihre eigene Kategorie und landet niemals bei butter_250g oder vollmilch_1l
     const buttermilch = matchOfferToCategory({
       title: "Müller Reine Buttermilch",
       description: "500-ml-Becher",
-      priceCents: 79,
+      priceCents: 69,
     });
-    expect(buttermilch).toBeNull();
+    expect(buttermilch?.categoryId).toBe("buttermilch_500ml");
   });
 
-  it("liest Packungsgrößen korrekt aus und ignoriert (1 kg = ...) Referenzangaben", () => {
+  it("trennt verwandte Produktgruppen (Milch, Tomaten, Kartoffeln, Kaffee) trennscharf", () => {
+    // Milch-Varianten
+    expect(
+      matchOfferToCategory({
+        title: "Bärenmarke Frische Vollmilch 3,8 %",
+        description: "1 l",
+        priceCents: 99,
+      })?.categoryId,
+    ).toBe("vollmilch_1l");
+
+    expect(
+      matchOfferToCategory({
+        title: "Milbona Haltbare Fettarme Milch 1,5 %",
+        description: "1 l",
+        priceCents: 89,
+      })?.categoryId,
+    ).toBe("fettarme_milch_1l");
+
+    expect(
+      matchOfferToCategory({
+        title: "Oatly Haferdrink Barista Edition",
+        description: "1 l",
+        priceCents: 149,
+      })?.categoryId,
+    ).toBe("haferdrink_1l");
+
+    // Tomaten-Varianten
+    expect(
+      matchOfferToCategory({
+        title: "Spanische Rispentomaten",
+        description: "500-g-Schale",
+        priceCents: 111,
+      })?.categoryId,
+    ).toBe("rispentomaten_500g");
+
+    expect(
+      matchOfferToCategory({
+        title: "Mutti Polpa Gehackte Tomaten",
+        description: "400-g-Dose",
+        priceCents: 99,
+      })?.categoryId,
+    ).toBe("passierte_tomaten_500g");
+
+    expect(
+      matchOfferToCategory({
+        title: "Oro di Parma Tomatenmark 3-fach konzentriert",
+        description: "200-g-Tube",
+        priceCents: 119,
+      })?.categoryId,
+    ).toBe("tomatenmark_200g");
+
+    expect(
+      matchOfferToCategory({
+        title: "Heinz Tomato Ketchup",
+        description: "500-ml-Flasche",
+        priceCents: 199,
+      })?.categoryId,
+    ).toBe("tomatenketchup_500ml");
+
+    // Kaffee-Varianten
+    expect(
+      matchOfferToCategory({
+        title: "Lavazza Caffè Crema Classico Ganze Bohnen",
+        description: "1-kg-Packung",
+        priceCents: 1199,
+      })?.categoryId,
+    ).toBe("kaffeebohnen_1kg");
+
+    expect(
+      matchOfferToCategory({
+        title: "Senseo Classic Kaffeepads",
+        description: "112-g-Beutel",
+        priceCents: 179,
+      })?.categoryId,
+    ).toBe("kaffeepads_100g");
+
+    expect(
+      matchOfferToCategory({
+        title: "Nescafé Gold Löslicher Bohnenkaffee",
+        description: "200-g-Glas",
+        priceCents: 549,
+      })?.categoryId,
+    ).toBe("loeslicher_kaffee_200g");
+  });
+
+  it("liest Packungsgrößen korrekt aus und ignoriert (1 kg = ...) sowie (100 g = ...) Referenzangaben", () => {
     expect(parsePackageSize("250-g-Pckg. (1 kg = 6,36)")).toEqual({
       amount: 250,
+      unit: "g",
+    });
+    expect(parsePackageSize("Edel-Salami 200 g (100 g = 0,79 €)")).toEqual({
+      amount: 200,
       unit: "g",
     });
     expect(parsePackageSize("Saskia Mineralwasser 6 x 1,5 l")).toEqual({
@@ -60,6 +222,14 @@ describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
     });
     expect(parsePackageSize("Zewa Toilettenpapier 8 Rollen")).toEqual({
       amount: 8,
+      unit: "stueck",
+    });
+    expect(parsePackageSize("Finish Powerball Geschirrspültabs 40 Tabs")).toEqual({
+      amount: 40,
+      unit: "stueck",
+    });
+    expect(parsePackageSize("Persil Vollwaschmittel 20 WL")).toEqual({
+      amount: 20,
       unit: "stueck",
     });
   });

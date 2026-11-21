@@ -165,7 +165,7 @@ export const CompareView = ({
 
       {isSplit && (
         <section aria-labelledby="detour-title">
-          <h2 id="detour-title" className="text-[26px] font-black tracking-tight">
+          <h2 id="detour-title" className="text-[26px] leading-tight font-black tracking-tight">
             Was du bei {split.secondaryStoreName} holst
           </h2>
           <ul className="mt-3 divide-y divide-line border-y border-line">
@@ -200,7 +200,7 @@ export const CompareView = ({
 
       <section aria-labelledby="ranking-title">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1.5">
-          <h2 id="ranking-title" className="text-[26px] font-black tracking-tight">
+          <h2 id="ranking-title" className="text-[26px] leading-tight font-black tracking-tight">
             Zum Vergleich: alles in einem Laden
           </h2>
           <p className="text-[15px] text-muted">Kassenpreis für alle Artikel deiner Liste</p>
