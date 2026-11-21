@@ -108,4 +108,31 @@ export const SCHEMA_STATEMENTS = [
     source text NOT NULL DEFAULT 'open_food_facts',
     updated_at timestamptz NOT NULL DEFAULT now()
   )`,
+  // Ausbaustufe 3, Paket 6: Gerichte-Baukasten
+  `CREATE TABLE IF NOT EXISTS recipes (
+    id text PRIMARY KEY,
+    name text NOT NULL,
+    servings integer NOT NULL DEFAULT 4,
+    prep_minutes integer NOT NULL DEFAULT 30,
+    tags text NOT NULL DEFAULT '[]',
+    is_builtin boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS recipe_ingredients (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    recipe_id text NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+    category_id text NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    quantity integer NOT NULL DEFAULT 1
+  )`,
+  `CREATE INDEX IF NOT EXISTS recipe_ingredients_recipe_idx ON recipe_ingredients (recipe_id)`,
+  // Ausbaustufe 3, Paket 7: Geteilte Haushaltsliste
+  `ALTER TABLE shopping_list_items ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+  `CREATE TABLE IF NOT EXISTS household_shares (
+    share_code text PRIMARY KEY,
+    list_id uuid NOT NULL REFERENCES shopping_lists(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS household_shares_list_idx ON household_shares (list_id)`,
 ];

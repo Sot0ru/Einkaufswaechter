@@ -528,6 +528,7 @@ export const buildExtendedCategories = (
   // ============================================================================
   {
     id: "vollkornpasta_500g",
+    isPantryStaple: true,
     name: "Vollkorn-Spaghetti / Vollkorn-Pasta",
     subtitle: "500 g Packung",
     department: "trocken",
@@ -544,6 +545,7 @@ export const buildExtendedCategories = (
   },
   {
     id: "lasagneplatten_500g",
+    isPantryStaple: true,
     name: "Lasagneplatten (Hartweizen)",
     subtitle: "500 g Packung",
     department: "trocken",
@@ -560,6 +562,7 @@ export const buildExtendedCategories = (
   },
   {
     id: "couscous_bulgur_500g",
+    isPantryStaple: true,
     name: "Couscous / Bulgur / Quinoa",
     subtitle: "500 g Packung",
     department: "trocken",
@@ -573,6 +576,7 @@ export const buildExtendedCategories = (
   },
   {
     id: "rote_linsen_500g",
+    isPantryStaple: true,
     name: "Rote Linsen / Tellerlinsen / Berglinsen",
     subtitle: "500 g Packung",
     department: "trocken",
@@ -829,6 +833,7 @@ export const buildExtendedCategories = (
   // ============================================================================
   {
     id: "kaffeekapseln_10st",
+    isPantryStaple: true,
     name: "Kaffeekapseln / Espresso-Kapseln (10er)",
     subtitle: "10 Kapseln Packung",
     department: "getraenke",

@@ -5,8 +5,10 @@ import { getDb } from "@/db";
 import { ensureCatalogAndDemoOffers } from "@/db/seed";
 import { getWeekWindowForDate } from "@/lib/providers/demo-offers";
 import { getCustomBasePricesMap } from "@/lib/services/base-prices";
+import { getFavoriteCategoryIds } from "@/lib/services/favorites";
 import { getPriceHistorySummary } from "@/lib/services/price-history";
 import { listReceiptAliases } from "@/lib/services/receipts";
+import { listRecipes } from "@/lib/services/recipes";
 import { listSavedShoppingLists } from "@/lib/services/shopping-lists";
 
 const todayInVienna = (): string => {
@@ -29,11 +31,15 @@ async function OptimizerLoader() {
     initialSavedLists,
     initialReceiptAliases,
     initialPriceHistory,
+    initialRecipes,
+    initialFavoriteCategoryIds,
   ] = await Promise.all([
     getCustomBasePricesMap(db),
     listSavedShoppingLists(db),
     listReceiptAliases(db),
     getPriceHistorySummary(db, today),
+    listRecipes(db, today),
+    getFavoriteCategoryIds(db),
   ]);
 
   return (
@@ -44,6 +50,8 @@ async function OptimizerLoader() {
       initialSavedLists={initialSavedLists}
       initialReceiptAliases={initialReceiptAliases}
       initialPriceHistory={initialPriceHistory}
+      initialRecipes={initialRecipes}
+      initialFavoriteCategoryIds={initialFavoriteCategoryIds}
     />
   );
 }

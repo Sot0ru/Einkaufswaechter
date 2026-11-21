@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   formatEuroCents,
   type OfferRecord,
@@ -14,7 +15,7 @@ import { formatThreshold, itemShortName } from "./format";
 import { type InStoreMode, type PlanLeg, resolvePlan } from "./plan";
 import { DealRatingBadge, PriceConfidenceBadge, ShrinkflationAlert } from "./PriceBadges";
 import { RoutePlan, type RoutePlanRow } from "./RoutePlan";
-import { cn, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./ui";
+import { cn, InfoIcon, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./ui";
 
 interface CompareViewProps {
   optimization: OptimizationOutput;
@@ -26,6 +27,8 @@ interface CompareViewProps {
   onStartRoute: (mode: InStoreMode) => void;
   onLoadPreset: () => void;
   onOpenList: () => void;
+  /** Wochen-Radar der Stammprodukte, erscheint unter dem Linienplan */
+  favoritesCard?: ReactNode;
 }
 
 /** Betrag, der nie zwischen Zahl und €-Zeichen umbricht */
@@ -33,9 +36,13 @@ const Euro = ({ cents }: { cents: number }) => (
   <span className="whitespace-nowrap">{formatEuroCents(cents)}</span>
 );
 
-const legCaption = (leg: PlanLeg): string => {
+const legCaption = (leg: PlanLeg, detourMinutes: number): string => {
   if (leg.role === "main") return `Hauptladen, ${leg.itemCount} Artikel`;
-  if (leg.role === "detour") return `Abstecher, ${leg.itemCount} Artikel`;
+  if (leg.role === "detour") {
+    return detourMinutes > 0
+      ? `Abstecher, ${leg.itemCount} Artikel, ${detourMinutes} Min. Umweg`
+      : `Abstecher, ${leg.itemCount} Artikel`;
+  }
   return `${leg.itemCount} Artikel`;
 };
 
@@ -49,6 +56,7 @@ export const CompareView = ({
   onStartRoute,
   onLoadPreset,
   onOpenList,
+  favoritesCard,
 }: CompareViewProps) => {
   const bestSingle = optimization.bestSingleStore;
   const plan = resolvePlan(optimization, "recommended");
@@ -81,7 +89,7 @@ export const CompareView = ({
   const rows: RoutePlanRow[] = plan.legs.map((leg) => ({
     variant: leg.variant,
     storeName: leg.storeName,
-    caption: legCaption(leg),
+    caption: legCaption(leg, split?.detourMinutes ?? 0),
     totalCents: leg.totalCents,
     departments: leg.departments,
   }));
@@ -128,7 +136,22 @@ export const CompareView = ({
                   </>
                 )}
                 .
-                {split && split.extraSavingsVsBestSingleCents > 0 && (
+                {split &&
+                  split.extraSavingsVsBestSingleCents >= optimization.secondStoreThresholdCents &&
+                  !split.meetsDetourEfficiency &&
+                  split.savingsPerDetourMinuteCents != null && (
+                    <>
+                      {" "}
+                      Mit {split.primaryStoreName} und {split.secondaryStoreName} würdest du{" "}
+                      <Euro cents={split.extraSavingsVsBestSingleCents} /> sparen, bei{" "}
+                      {split.detourMinutes} Min. Umweg sind das nur{" "}
+                      <Euro cents={split.savingsPerDetourMinuteCents} /> pro Minute. Dein Minimum liegt
+                      bei <Euro cents={split.minSavingsPerDetourMinuteCents} />.
+                    </>
+                  )}
+                {split &&
+                  split.extraSavingsVsBestSingleCents > 0 &&
+                  split.extraSavingsVsBestSingleCents < optimization.secondStoreThresholdCents && (
                   <>
                     {" "}
                     Mit {split.primaryStoreName} und {split.secondaryStoreName} würdest du nur{" "}
@@ -183,6 +206,8 @@ export const CompareView = ({
         }
       />
 
+      {favoritesCard}
+
       {isSplit && (
         <section aria-labelledby="detour-title">
           <h2 id="detour-title" className="text-[26px] leading-tight font-black tracking-tight">
@@ -234,6 +259,12 @@ export const CompareView = ({
                       <div className="mt-1.5">
                         <ShrinkflationAlert warning={deal.shrinkflationWarning} />
                       </div>
+                    )}
+                    {item.stockUpHint && (
+                      <p className="mt-1.5 flex items-start gap-1.5 text-[13px]">
+                        <InfoIcon className="mt-px size-4 flex-none text-route" />
+                        {item.stockUpHint}
+                      </p>
                     )}
                   </div>
                   <div className="text-right tabular-nums">

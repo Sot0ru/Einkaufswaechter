@@ -6,8 +6,9 @@ import {
 import { getWeekWindowForDate } from "@/lib/providers/demo-offers";
 import type { ReceiptAliasEntry } from "@/lib/providers/receipt-importer";
 import { buildRegionalOffersForZip } from "@/lib/providers/zip-offer-fetcher";
-import { SHOPPING_PRESETS } from "@/lib/rules/catalog";
+import { SHOPPING_PRESETS, type StoreId } from "@/lib/rules/catalog";
 import type { BasketItemInput } from "@/lib/rules/optimizer";
+import { BUILTIN_RECIPES, type RecipeDefinition } from "@/lib/rules/recipes";
 import type { CustomBasePricesMap } from "@/lib/services/base-prices";
 import type { SavedShoppingList } from "@/lib/services/shopping-lists";
 
@@ -26,6 +27,10 @@ interface PersistedMobileState {
   customBasePrices?: CustomBasePricesMap;
   savedLists?: SavedShoppingList[];
   receiptAliases?: ReceiptAliasEntry[];
+  storeDetourMinutes?: Partial<Record<StoreId, number>>;
+  minSavingsPerDetourMinuteCents?: number;
+  favoriteCategoryIds?: string[];
+  customRecipes?: RecipeDefinition[];
 }
 
 const loadStoredState = (): PersistedMobileState => {
@@ -80,6 +85,10 @@ const bootstrap = () => {
       initialCheckedKeys={stored.checkedKeys}
       initialCustomBasePrices={stored.customBasePrices}
       initialReceiptAliases={stored.receiptAliases}
+      initialRecipes={[...BUILTIN_RECIPES, ...(stored.customRecipes ?? [])]}
+      initialFavoriteCategoryIds={stored.favoriteCategoryIds}
+      initialStoreDetourMinutes={stored.storeDetourMinutes}
+      initialMinSavingsPerDetourMinuteCents={stored.minSavingsPerDetourMinuteCents}
       initialSavedLists={
         stored.savedLists && stored.savedLists.length > 0 ? stored.savedLists : defaultLists
       }

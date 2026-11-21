@@ -11,6 +11,7 @@ import {
 } from "@/lib/rules/catalog";
 import { formatEuroCents } from "@/lib/rules/optimizer";
 import { formatShortDate } from "./format";
+import { ReceiptReconciliation, type ReconciliationView } from "./ReceiptReconciliation";
 import { cn, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./ui";
 
 interface ReceiptImportPanelProps {
@@ -27,6 +28,8 @@ interface ReceiptImportPanelProps {
   isImporting: boolean;
   onImport: () => void;
   feedback: string | null;
+  reconciliation: ReconciliationView | null;
+  onApplyReconciledPrices: () => void;
 }
 
 export const ReceiptImportPanel = ({
@@ -43,6 +46,8 @@ export const ReceiptImportPanel = ({
   isImporting,
   onImport,
   feedback,
+  reconciliation,
+  onApplyReconciledPrices,
 }: ReceiptImportPanelProps) => {
   const [ocrStatus, setOcrStatus] = useState<string | null>(null);
   const [isExtractingFile, setIsExtractingFile] = useState(false);
@@ -208,6 +213,9 @@ export const ReceiptImportPanel = ({
           )}
         </div>
       </div>
+      {reconciliation && (
+        <ReceiptReconciliation view={reconciliation} onApplyPrices={onApplyReconciledPrices} />
+      )}
     </section>
   );
 };

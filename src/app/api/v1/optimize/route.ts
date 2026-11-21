@@ -14,6 +14,7 @@ const OptimizeRequestSchema = z.object({
     z.object({
       categoryId: z.string().min(1),
       quantity: z.number().int().min(1).max(50),
+      preference: z.enum(["cheapest", "bio", "brand"]).optional(),
     }),
   ),
   enabledStores: z.array(z.enum(validStoreIds)).min(1),
@@ -21,6 +22,9 @@ const OptimizeRequestSchema = z.object({
   shoppingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   secondStoreThresholdCents: z.number().int().min(0).max(10000).default(500),
   zipCode: z.string().regex(/^\d{5}$/).default("10115"),
+  /** Persönlicher Umweg je Markt in Minuten, z. B. { "kaufland": 15 } */
+  storeDetourMinutes: z.partialRecord(z.enum(validStoreIds), z.number().int().min(0).max(240)).optional(),
+  minSavingsPerDetourMinuteCents: z.number().int().min(0).max(1000).optional(),
 });
 
 export async function POST(request: Request) {
