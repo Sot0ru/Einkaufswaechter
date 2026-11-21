@@ -27,7 +27,16 @@ execFileSync(
 const chunksDir = join(ROOT, ".next", "static", "chunks");
 const cssFiles = readdirSync(chunksDir).filter((f) => f.endsWith(".css"));
 const combinedCss = cssFiles.map((f) => readFileSync(join(chunksDir, f), "utf8")).join("\n");
-writeFileSync(join(DIST, "app.css"), combinedCss, "utf8");
+
+// next/font setzt seine Schrift-Variablen nur in der Next-App. Die PWA bringt Overpass
+// deshalb selbst mit; globals.css fällt dort auf den Familiennamen "Overpass Variable" zurück.
+const FONT_FILE = "overpass.woff2";
+cpSync(
+  join(ROOT, "node_modules", "@fontsource-variable", "overpass", "files", "overpass-latin-wght-normal.woff2"),
+  join(DIST, FONT_FILE),
+);
+const fontFaceCss = `@font-face{font-family:"Overpass Variable";src:url("./${FONT_FILE}") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}`;
+writeFileSync(join(DIST, "app.css"), `${fontFaceCss}\n${combinedCss}`, "utf8");
 
 // 3. Copy PWA manifest and icon
 cpSync(join(ROOT, "public", "manifest.webmanifest"), join(DIST, "manifest.webmanifest"));
@@ -35,8 +44,18 @@ cpSync(join(ROOT, "public", "icon.svg"), join(DIST, "icon.svg"));
 writeFileSync(join(DIST, ".nojekyll"), "", "utf8");
 
 // 4. Write offline Service Worker
-const swContent = `const CACHE_NAME = "einkaufswaechter-pwa-v1";
-const ASSETS = ["./", "./index.html", "./app.css", "./app.js", "./manifest.webmanifest", "./icon.svg"];
+// Eigene Cache-Kennung pro Build, damit installierte Apps keine alte Version festhalten
+const resolveBuildId = () => {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+  } catch {
+    return String(Date.now());
+  }
+};
+const BUILD_ID = resolveBuildId();
+
+const swContent = `const CACHE_NAME = "einkaufswaechter-pwa-${BUILD_ID}";
+const ASSETS = ["./", "./index.html", "./app.css?v=${BUILD_ID}", "./app.js?v=${BUILD_ID}", "./manifest.webmanifest", "./icon.svg", "./${FONT_FILE}"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
@@ -81,11 +100,11 @@ const htmlContent = `<!DOCTYPE html>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="./icon.svg" />
-  <link rel="stylesheet" href="./app.css" />
+  <link rel="stylesheet" href="./app.css?v=${BUILD_ID}" />
 </head>
 <body class="min-h-full font-sans">
   <main id="root" class="min-h-screen"></main>
-  <script src="./app.js" defer></script>
+  <script src="./app.js?v=${BUILD_ID}" defer></script>
 </body>
 </html>
 `;
