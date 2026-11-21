@@ -94,4 +94,18 @@ export const SCHEMA_STATEMENTS = [
     receipt_date date NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE receipt_observations ADD COLUMN IF NOT EXISTS package_amount integer`,
+  `ALTER TABLE receipt_observations ADD COLUMN IF NOT EXISTS package_unit text`,
+  `CREATE INDEX IF NOT EXISTS receipt_observations_history_idx ON receipt_observations (category_id, receipt_date)`,
+  `CREATE TABLE IF NOT EXISTS barcode_products (
+    barcode text PRIMARY KEY,
+    product_name text NOT NULL,
+    brand text,
+    quantity_text text,
+    package_amount integer,
+    package_unit text,
+    category_id text REFERENCES categories(id) ON DELETE SET NULL,
+    source text NOT NULL DEFAULT 'open_food_facts',
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
 ];

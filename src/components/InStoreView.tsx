@@ -1,12 +1,27 @@
 import { CATEGORY_MAP, type StoreId } from "@/lib/rules/catalog";
-import { formatEuroCents, type OptimizationOutput, type ResolvedStoreItem } from "@/lib/rules/optimizer";
+import {
+  formatEuroCents,
+  type OfferRecord,
+  type OptimizationOutput,
+  type ResolvedStoreItem,
+} from "@/lib/rules/optimizer";
+import {
+  assessResolvedItemConfidence,
+  buildVerifiedKey,
+  evaluateOfferDeal,
+  type PriceHistorySummary,
+} from "@/lib/rules/price-intelligence";
 import type { CustomBasePricesMap } from "@/lib/services/base-prices";
 import { itemShortName } from "./format";
 import { type InStoreMode, type PlanLeg, resolvePlan } from "./plan";
+import { DealRatingBadge, PriceConfidenceBadge, ShrinkflationAlert } from "./PriceBadges";
 import { cn, InfoIcon, StorePlate, ToggleChip } from "./ui";
 
 interface InStoreViewProps {
   optimization: OptimizationOutput;
+  offers: readonly OfferRecord[];
+  shoppingDate: string;
+  priceHistory?: PriceHistorySummary;
   mode: InStoreMode;
   onModeChange: (mode: InStoreMode) => void;
   checkedKeys: Record<string, boolean>;
@@ -20,6 +35,9 @@ interface InStoreViewProps {
 /** Werkzeuge, um den Normalpreis einer Eigenmarke direkt am Regal zu korrigieren */
 interface BasePriceTools {
   customBasePrices: CustomBasePricesMap;
+  offers: readonly OfferRecord[];
+  shoppingDate: string;
+  priceHistory?: PriceHistorySummary;
   onAdjust: (categoryId: string, storeId: StoreId, deltaCents: number) => void;
   onReset: (categoryId: string, storeId: StoreId) => void;
 }
@@ -28,6 +46,9 @@ const checkKeyFor = (item: ResolvedStoreItem): string => `${item.storeId}:${item
 
 export const InStoreView = ({
   optimization,
+  offers,
+  shoppingDate,
+  priceHistory,
   mode,
   onModeChange,
   checkedKeys,
@@ -40,6 +61,9 @@ export const InStoreView = ({
   const plan = resolvePlan(optimization, mode);
   const priceTools: BasePriceTools = {
     customBasePrices,
+    offers,
+    shoppingDate,
+    priceHistory,
     onAdjust: onAdjustBasePrice,
     onReset: onResetBasePrice,
   };
@@ -251,6 +275,32 @@ const ChecklistItem = ({ item, checked, onToggle, priceTools }: ChecklistItemPro
   const currentPackCents = customEntry?.priceCents ?? defaultPackCents;
   const isCustomized = customEntry != null && customEntry.priceCents !== defaultPackCents;
 
+  const matchingOffer = item.isOffer
+    ? priceTools.offers.find(
+        (offer) =>
+          offer.storeId === item.storeId &&
+          offer.categoryId === item.categoryId &&
+          offer.validFrom <= priceTools.shoppingDate &&
+          offer.validTo >= priceTools.shoppingDate,
+      )
+    : undefined;
+  const verifiedRecord =
+    priceTools.priceHistory?.verifiedPrices[buildVerifiedKey(item.categoryId, item.storeId)];
+  const confidence = assessResolvedItemConfidence({
+    item,
+    matchingOffer,
+    isUserCustomized: isCustomized,
+    verifiedRecord,
+    referenceDate: priceTools.shoppingDate,
+  });
+  const deal = matchingOffer
+    ? evaluateOfferDeal(
+        matchingOffer,
+        priceTools.priceHistory?.categoryStats[item.categoryId],
+        priceTools.customBasePrices,
+      )
+    : null;
+
   return (
     <li className={cn("rounded-md transition", checked ? "bg-paper" : "bg-panel")}>
       <label className="flex min-h-14 cursor-pointer items-start gap-3 px-3 pb-1.5 pt-2.5">
@@ -281,9 +331,18 @@ const ChecklistItem = ({ item, checked, onToggle, priceTools }: ChecklistItemPro
             )}
             {formatEuroCents(item.unitPriceCents)}/{item.unitLabel}
           </span>
-          {item.loyaltyAppName && (
-            <span className="mt-1.5 self-start rounded border border-route px-1.5 pt-0.5 text-xs font-bold text-route">
-              Mit {item.loyaltyAppName} scannen
+          <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <PriceConfidenceBadge confidence={confidence} />
+            {deal && <DealRatingBadge deal={deal} />}
+            {item.loyaltyAppName && (
+              <span className="rounded border border-route px-1.5 pt-0.5 text-xs font-bold text-route">
+                Mit {item.loyaltyAppName} scannen
+              </span>
+            )}
+          </span>
+          {deal?.shrinkflationWarning && (
+            <span className="mt-1.5">
+              <ShrinkflationAlert warning={deal.shrinkflationWarning} />
             </span>
           )}
           {item.bulkPackHint && (

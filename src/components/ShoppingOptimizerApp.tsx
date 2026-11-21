@@ -29,9 +29,16 @@ import {
   type OfferRecord,
   optimizeShoppingBasket,
 } from "@/lib/rules/optimizer";
+import {
+  buildCategoryPriceStats,
+  buildVerifiedKey,
+  type PriceHistorySample,
+  type PriceHistorySummary,
+} from "@/lib/rules/price-intelligence";
 import type { CustomBasePricesMap } from "@/lib/services/base-prices";
 import type { SavedShoppingList } from "@/lib/services/shopping-lists";
 import { type AppTab, BottomNav, LegalFooter, SiteHeader } from "./AppChrome";
+import { type BarcodeSavePayload, BarcodeScannerPanel } from "./BarcodeScannerPanel";
 import { CompareView } from "./CompareView";
 import { formatWeekday } from "./format";
 import { InStoreView } from "./InStoreView";
@@ -51,6 +58,7 @@ export interface ShoppingOptimizerAppProps {
   initialCustomBasePrices?: CustomBasePricesMap;
   initialSavedLists?: SavedShoppingList[];
   initialReceiptAliases?: ReceiptAliasEntry[];
+  initialPriceHistory?: PriceHistorySummary;
   initialBasketItems?: BasketItemInput[];
   initialZipCode?: string;
   initialCheckedKeys?: Record<string, boolean>;
@@ -71,6 +79,7 @@ export function ShoppingOptimizerApp({
   initialCustomBasePrices = {},
   initialSavedLists = [],
   initialReceiptAliases = [],
+  initialPriceHistory,
   initialBasketItems,
   initialZipCode = "10115",
   initialCheckedKeys = {},
@@ -99,7 +108,31 @@ export function ShoppingOptimizerApp({
   const [offers, setOffers] = useState<OfferRecord[]>(initialOffers);
   const [customBasePrices, setCustomBasePrices] =
     useState<CustomBasePricesMap>(initialCustomBasePrices);
+  const [priceHistory, setPriceHistory] = useState<PriceHistorySummary>(
+    () =>
+      initialPriceHistory ?? {
+        windowDays: 90,
+        referenceDate: weekWindow.saturday,
+        categoryStats: buildCategoryPriceStats(
+          initialOffers.map(
+            (o): PriceHistorySample => ({
+              categoryId: o.categoryId,
+              storeId: o.storeId,
+              priceCents: o.loyaltyPriceCents ?? o.priceCents,
+              packageAmount: o.packageAmount,
+              packageUnit: o.packageUnit,
+              observedDate: o.validFrom,
+              source: "weekly_offer",
+              isOffer: true,
+            }),
+          ),
+          weekWindow.saturday,
+        ),
+        verifiedPrices: {},
+      },
+  );
   const [priceEditFeedback, setPriceEditFeedback] = useState<string | null>(null);
+  const [barcodeFeedback, setBarcodeFeedback] = useState<string | null>(null);
   const [inStoreMode, setInStoreMode] = useState<InStoreMode>("recommended");
 
   // Gespeicherte Einkaufslisten
@@ -387,6 +420,22 @@ export function ShoppingOptimizerApp({
       setManualReceiptAssignments({});
     }
 
+    setPriceHistory((prev) => {
+      const nextVerified = { ...prev.verifiedPrices };
+      for (const item of confirmedItems) {
+        nextVerified[buildVerifiedKey(item.categoryId, storeId)] = {
+          categoryId: item.categoryId,
+          storeId,
+          priceCents: item.effectivePriceCents,
+          observedDate: effectiveDate,
+          source: "receipt",
+          packageAmount: item.packageAmount ?? null,
+          packageUnit: item.packageUnit ?? null,
+        };
+      }
+      return { ...prev, verifiedPrices: nextVerified };
+    });
+
     const storeName = STORE_MAP[storeId].shortName;
 
     // 2. Im Hintergrund dauerhaft speichern
@@ -658,6 +707,96 @@ export function ShoppingOptimizerApp({
     }
   };
 
+  const saveBarcodePrice = async (payload: BarcodeSavePayload) => {
+    const category = CATEGORY_MAP[payload.categoryId];
+    if (!category) return;
+
+    const packageAmount = payload.packageAmount ?? category.standardAmount;
+    const packageUnit = payload.packageUnit ?? category.unit;
+
+    // 1. Sofort lokal übernehmen (funktioniert auch offline in der PWA)
+    if (payload.isOffer) {
+      const offerId = `barcode-${payload.storeId}-${category.id}-${activeZipCode}-${weekWindow.monday}`;
+      const title = [payload.brand, payload.productName].filter(Boolean).join(" ").trim();
+      const localOffer: OfferRecord = {
+        id: offerId,
+        storeId: payload.storeId,
+        categoryId: category.id,
+        title,
+        priceCents: payload.priceCents,
+        loyaltyPriceCents: null,
+        requiresLoyaltyApp: false,
+        packageAmount,
+        packageUnit,
+        validFrom: weekWindow.monday,
+        validTo: weekWindow.saturday,
+      };
+      setOffers((prev) => [
+        ...prev.filter(
+          (o) => !(o.storeId === payload.storeId && o.categoryId === category.id),
+        ),
+        localOffer,
+      ]);
+    } else {
+      setCustomBasePrices((prev) => ({
+        ...prev,
+        [category.id]: {
+          ...(prev[category.id] ?? {}),
+          [payload.storeId]: {
+            priceCents: payload.priceCents,
+            productLabel: category.defaultBasePrices[payload.storeId].productLabel,
+          },
+        },
+      }));
+    }
+
+    setPriceHistory((prev) => ({
+      ...prev,
+      verifiedPrices: {
+        ...prev.verifiedPrices,
+        [buildVerifiedKey(category.id, payload.storeId)]: {
+          categoryId: category.id,
+          storeId: payload.storeId,
+          priceCents: payload.priceCents,
+          observedDate: shoppingDate,
+          source: "barcode",
+          packageAmount,
+          packageUnit,
+        },
+      },
+    }));
+
+    const storeShort = STORE_MAP[payload.storeId].shortName;
+
+    // 2. Im Hintergrund dauerhaft in der Datenbank speichern
+    try {
+      const response = await fetch("/api/v1/barcode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...payload,
+          zipCode: activeZipCode,
+          observedDate: shoppingDate,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.customBasePrices) setCustomBasePrices(data.customBasePrices);
+        if (data.priceHistory) setPriceHistory(data.priceHistory);
+        setBarcodeFeedback(
+          `${payload.productName} (${formatEuroCents(payload.priceCents)}) bei ${storeShort} dauerhaft gespeichert${data.shrinkflationWarning ? ` – ${data.shrinkflationWarning.message}` : ""}.`,
+        );
+        return;
+      }
+    } catch {
+      // Offline / PWA: lokale Übernahme gilt bereits
+    }
+
+    setBarcodeFeedback(
+      `${payload.productName} (${formatEuroCents(payload.priceCents)}) bei ${storeShort} als ${payload.isOffer ? "Wochenangebot" : "Normalpreis"} übernommen.`,
+    );
+  };
+
   const isWeekendShopping = shoppingDate >= weekWindow.thursday;
   const busyFetching = isSyncingZip || isLiveScraping;
 
@@ -676,6 +815,10 @@ export function ShoppingOptimizerApp({
             <div className="min-w-0 lg:col-start-2 lg:row-start-1">
               <CompareView
                 optimization={optimization}
+                offers={offers}
+                shoppingDate={shoppingDate}
+                priceHistory={priceHistory}
+                customBasePrices={customBasePrices}
                 weekday={formatWeekday(shoppingDate)}
                 onStartRoute={startRoute}
                 onLoadPreset={() => loadPreset(DEFAULT_PRESET_ID)}
@@ -729,6 +872,9 @@ export function ShoppingOptimizerApp({
         {activeTab === "instore" && (
           <InStoreView
             optimization={optimization}
+            offers={offers}
+            shoppingDate={shoppingDate}
+            priceHistory={priceHistory}
             mode={inStoreMode}
             onModeChange={setInStoreMode}
             checkedKeys={checkedKeys}
@@ -756,6 +902,12 @@ export function ShoppingOptimizerApp({
               feedback={zipSyncFeedback}
               chainStatuses={chainScrapeStatuses}
             />
+            <BarcodeScannerPanel
+              defaultStoreId={receiptFallbackStoreId}
+              activeZipCode={activeZipCode}
+              onSaveBarcodePrice={saveBarcodePrice}
+              feedback={barcodeFeedback}
+            />
             <ReceiptImportPanel
               receiptInput={receiptInput}
               onReceiptInputChange={setReceiptInput}
@@ -776,6 +928,9 @@ export function ShoppingOptimizerApp({
             <OffersView
               offers={offers}
               weekWindow={weekWindow}
+              shoppingDate={shoppingDate}
+              priceHistory={priceHistory}
+              customBasePrices={customBasePrices}
               importStoreId={importStoreId}
               onImportStoreChange={setImportStoreId}
               brochureInput={brochureInput}

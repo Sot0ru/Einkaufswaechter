@@ -1,11 +1,27 @@
-import { formatEuroCents, type OptimizationOutput } from "@/lib/rules/optimizer";
+import {
+  formatEuroCents,
+  type OfferRecord,
+  type OptimizationOutput,
+} from "@/lib/rules/optimizer";
+import {
+  assessOfferConfidence,
+  buildVerifiedKey,
+  evaluateOfferDeal,
+  type PriceHistorySummary,
+} from "@/lib/rules/price-intelligence";
+import type { CustomBasePricesMap } from "@/lib/services/base-prices";
 import { formatThreshold, itemShortName } from "./format";
 import { type InStoreMode, type PlanLeg, resolvePlan } from "./plan";
+import { DealRatingBadge, PriceConfidenceBadge, ShrinkflationAlert } from "./PriceBadges";
 import { RoutePlan, type RoutePlanRow } from "./RoutePlan";
 import { cn, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./ui";
 
 interface CompareViewProps {
   optimization: OptimizationOutput;
+  offers: readonly OfferRecord[];
+  shoppingDate: string;
+  priceHistory?: PriceHistorySummary;
+  customBasePrices?: CustomBasePricesMap;
   weekday: string;
   onStartRoute: (mode: InStoreMode) => void;
   onLoadPreset: () => void;
@@ -25,6 +41,10 @@ const legCaption = (leg: PlanLeg): string => {
 
 export const CompareView = ({
   optimization,
+  offers,
+  shoppingDate,
+  priceHistory,
+  customBasePrices,
   weekday,
   onStartRoute,
   onLoadPreset,
@@ -169,31 +189,64 @@ export const CompareView = ({
             Was du bei {split.secondaryStoreName} holst
           </h2>
           <ul className="mt-3 divide-y divide-line border-y border-line">
-            {split.secondaryItems.map((item) => (
-              <li key={item.categoryId} className="flex items-center gap-4 py-3">
-                <span
-                  aria-hidden="true"
-                  className="size-3.5 flex-none rounded-full border-4 border-detour"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold">
-                    {item.requestedQuantity}× {itemShortName(item)}
-                  </p>
-                  <p className="text-sm text-muted">
-                    {item.productLabel}
-                    {item.loyaltyAppName && `, mit ${item.loyaltyAppName}`}
-                  </p>
-                </div>
-                <div className="text-right tabular-nums">
-                  <p className="font-extrabold">{formatEuroCents(item.checkoutCents)}</p>
-                  {item.savingsCents > 0 && (
-                    <p className="text-sm text-muted">
-                      statt <s>{formatEuroCents(item.regularCheckoutCents)}</s>
+            {split.secondaryItems.map((item) => {
+              const matchingOffer = offers.find(
+                (offer) =>
+                  offer.storeId === item.storeId &&
+                  offer.categoryId === item.categoryId &&
+                  offer.validFrom <= shoppingDate &&
+                  offer.validTo >= shoppingDate,
+              );
+              const verified =
+                priceHistory?.verifiedPrices[buildVerifiedKey(item.categoryId, item.storeId)];
+              const deal = matchingOffer
+                ? evaluateOfferDeal(
+                    matchingOffer,
+                    priceHistory?.categoryStats[item.categoryId],
+                    customBasePrices,
+                  )
+                : null;
+              const confidence = matchingOffer
+                ? assessOfferConfidence(matchingOffer, shoppingDate, verified)
+                : null;
+
+              return (
+                <li key={item.categoryId} className="flex items-start gap-4 py-3">
+                  <span
+                    aria-hidden="true"
+                    className="mt-1 size-3.5 flex-none rounded-full border-4 border-detour"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold">
+                      {item.requestedQuantity}× {itemShortName(item)}
                     </p>
-                  )}
-                </div>
-              </li>
-            ))}
+                    <p className="text-sm text-muted">
+                      {item.productLabel}
+                      {item.loyaltyAppName && `, mit ${item.loyaltyAppName}`}
+                    </p>
+                    {(deal || confidence) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {deal && <DealRatingBadge deal={deal} />}
+                        {confidence && <PriceConfidenceBadge confidence={confidence} />}
+                      </div>
+                    )}
+                    {deal?.shrinkflationWarning && (
+                      <div className="mt-1.5">
+                        <ShrinkflationAlert warning={deal.shrinkflationWarning} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right tabular-nums">
+                    <p className="font-extrabold">{formatEuroCents(item.checkoutCents)}</p>
+                    {item.savingsCents > 0 && (
+                      <p className="text-sm text-muted">
+                        statt <s>{formatEuroCents(item.regularCheckoutCents)}</s>
+                      </p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
