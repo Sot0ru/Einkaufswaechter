@@ -4,6 +4,7 @@ import {
   type StoreId,
 } from "@/lib/rules/catalog";
 import { detectLoyaltyRequirement, matchOfferToCategory } from "@/lib/rules/matcher";
+import { isStoreBrandLabel } from "@/lib/rules/store-brands";
 import type { OfferRecord } from "@/lib/rules/optimizer";
 import { getWeekWindowForDate } from "./demo-offers";
 
@@ -78,43 +79,6 @@ const STORE_HEADER_PATTERNS: readonly { storeId: StoreId; patterns: readonly Reg
   { storeId: "penny", patterns: [/\bpenny\b/i] },
 ];
 
-const STORE_BRAND_MARKERS = [
-  "ja!",
-  "gut & günstig",
-  "gut&günstig",
-  "g&g",
-  "k-classic",
-  "k-cl",
-  "k-purland",
-  "milbona",
-  "milb.",
-  "milsani",
-  "metzgerfrisch",
-  "metzgerfr.",
-  "meine metzgerei",
-  "combino",
-  "freshona",
-  "bellarom",
-  "floralys",
-  "kokett",
-  "grafschafter",
-  "goldähren",
-  "gutes land",
-  "markttag",
-  "marktliebe",
-  "dulano",
-  "elite",
-  "san fabio",
-  "mühlenhof",
-  "saskia",
-  "quellbrunn",
-  "crownfield",
-  "knusperone",
-  "vemondo",
-  "myvay",
-  "w5",
-  "tandil",
-] as const;
 
 const ABBREVIATION_RULES: readonly [RegExp, string][] = [
   [/\bmilb\.?/gi, "milbona "],
@@ -212,10 +176,7 @@ export const expandReceiptAbbreviations = (rawLabel: string): string => {
   return expanded.replace(/\s+/g, " ").trim();
 };
 
-const detectStoreBrand = (label: string): boolean => {
-  const lower = label.toLowerCase();
-  return STORE_BRAND_MARKERS.some((marker) => lower.includes(marker));
-};
+const detectStoreBrand = isStoreBrandLabel;
 
 const detectHeaderMetadata = (
   lines: string[],

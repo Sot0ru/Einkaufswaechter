@@ -37,3 +37,12 @@
   - `src/lib/providers/browser-ocr.ts` & `src/lib/providers/pdf-brochure-parser.ts`: Lokale Kassenbon-Foto-OCR im Browser (`tesseract.js`), E-Bon-PDF-Import in `ReceiptImportPanel.tsx` sowie Zero-Dependency PDF-/HTML-Prospekt-Dropzone in `OffersView.tsx`.
   - Vollständige Unit- und PGlite-DB-Tests in `src/lib/__tests__/price-intelligence.test.ts`.
   - Folgepakete als Draft-PRs spezifiziert: `docs/paket-6-smarte-optimierung.md` (PR #3) und `docs/paket-7-alltag-haushalt.md` (PR #4).
+- **Ausbaustufe 3 – Paket 2 (Smartere Einkaufs- & Optimierungslogik):** Umgesetzt durch Claude nach `docs/paket-6-smarte-optimierung.md`.
+  - Gerichte-Baukasten mit 19 Standard-Gerichten, eigenen Gerichten aus der aktuellen Liste und Wochen-Scoring (`src/lib/rules/recipes.ts`, `src/lib/services/recipes.ts`, `/api/v1/recipes`, Tabellen `recipes` und `recipe_ingredients`).
+  - Produkt-Präferenz je Artikel (Günstigste, Bio, Marke), Vorratstipp für haltbare Artikel ab 25 % Rabatt und Umweg-Gewichtung im Smart-Split; Hauptladen-Tie-Breaking unverändert.
+  - Tests in `src/lib/__tests__/optimizer.test.ts` und `src/lib/__tests__/recipes.test.ts`.
+- **Ausbaustufe 3 – Paket 3 (Alltag im Laden & Haushalt):** Umgesetzt durch Claude nach `docs/paket-7-alltag-haushalt.md`.
+  - Geteilte Haushaltsliste per Link und QR-Code mit Abgleich der Haken (`/api/v1/lists/share`, `/api/v1/lists/share/[code]`, Tabelle `household_shares`, `shopping_list_items.updated_at`), offline als Schnappschuss-Link.
+  - Wochen-Radar für Stammprodukte mit „Alle auf die Liste“ und Montags-Erinnerung als `.ics` (`/api/v1/favorites`).
+  - Kassenzettel-Gegencheck nach dem Bon-Import mit Übernahme abweichender Normalpreise.
+  - Tests in `src/lib/__tests__/household-sync.test.ts`.

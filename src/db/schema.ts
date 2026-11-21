@@ -87,6 +87,8 @@ export const shoppingListItems = pgTable("shopping_list_items", {
     .references(() => categories.id, { onDelete: "cascade" }),
   quantity: integer("quantity").default(1).notNull(),
   checked: boolean("checked").default(false).notNull(),
+  /** Zeitpunkt der letzten Änderung, für den Abgleich geteilter Listen (letzte Änderung gewinnt) */
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const offerFetchRuns = pgTable("offer_fetch_runs", {
@@ -140,4 +142,36 @@ export const barcodeProducts = pgTable("barcode_products", {
   categoryId: text("category_id").references(() => categories.id, { onDelete: "set null" }),
   source: text("source").default("open_food_facts").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const recipes = pgTable("recipes", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  servings: integer("servings").default(4).notNull(),
+  prepMinutes: integer("prep_minutes").default(30).notNull(),
+  /** JSON-Array der Schlagworte, z. B. ["Vegetarisch","Schnell"] */
+  tags: text("tags").default("[]").notNull(),
+  isBuiltin: boolean("is_builtin").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const recipeIngredients = pgTable("recipe_ingredients", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  recipeId: text("recipe_id")
+    .notNull()
+    .references(() => recipes.id, { onDelete: "cascade" }),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").default(1).notNull(),
+});
+
+export const householdShares = pgTable("household_shares", {
+  shareCode: text("share_code").primaryKey(),
+  listId: uuid("list_id")
+    .notNull()
+    .references(() => shoppingLists.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
