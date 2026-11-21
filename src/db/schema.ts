@@ -125,5 +125,19 @@ export const receiptObservations = pgTable("receipt_observations", {
   priceCents: integer("price_cents").notNull(),
   isOffer: boolean("is_offer").default(false).notNull(),
   receiptDate: date("receipt_date", { mode: "string" }).notNull(),
+  packageAmount: integer("package_amount"),
+  packageUnit: text("package_unit"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const barcodeProducts = pgTable("barcode_products", {
+  barcode: text("barcode").primaryKey(),
+  productName: text("product_name").notNull(),
+  brand: text("brand"),
+  quantityText: text("quantity_text"),
+  packageAmount: integer("package_amount"),
+  packageUnit: text("package_unit"),
+  categoryId: text("category_id").references(() => categories.id, { onDelete: "set null" }),
+  source: text("source").default("open_food_facts").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

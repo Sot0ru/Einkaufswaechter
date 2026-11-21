@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { type ChangeEvent, type ReactNode, useState } from "react";
+import { extractReceiptTextFromFile } from "@/lib/providers/browser-ocr";
 import type { ParsedReceiptItem, ParsedReceiptResult } from "@/lib/providers/receipt-importer";
 import {
   CATEGORIES,
@@ -10,7 +11,7 @@ import {
 } from "@/lib/rules/catalog";
 import { formatEuroCents } from "@/lib/rules/optimizer";
 import { formatShortDate } from "./format";
-import { cn, PRIMARY_BUTTON } from "./ui";
+import { cn, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./ui";
 
 interface ReceiptImportPanelProps {
   receiptInput: string;
@@ -43,10 +44,45 @@ export const ReceiptImportPanel = ({
   onImport,
   feedback,
 }: ReceiptImportPanelProps) => {
+  const [ocrStatus, setOcrStatus] = useState<string | null>(null);
+  const [isExtractingFile, setIsExtractingFile] = useState(false);
+
   const resolvedCount = preview.items.filter(
     (item) => item.matched || Boolean(manualAssignments[item.aliasNormalized]),
   ).length;
   const storeId = preview.detectedStoreId ?? fallbackStoreId;
+
+  const handleReceiptFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setIsExtractingFile(true);
+    setOcrStatus(`Verarbeite ${file.name}…`);
+    try {
+      const result = await extractReceiptTextFromFile(file, setOcrStatus);
+      if (!result.text.trim()) {
+        setOcrStatus(
+          "Aus der Datei konnte kein Text gelesen werden. Bei sehr unscharfen Fotos bitte gerade und gut beleuchtet fotografieren.",
+        );
+        return;
+      }
+      onReceiptInputChange(result.text);
+      const sourceText =
+        result.source === "pdf"
+          ? "E-Bon-PDF lokal ausgelesen"
+          : result.source === "ocr_image"
+            ? `Foto lokal per OCR erkannt${result.confidence != null ? ` (${result.confidence} % Sicherheit)` : ""}`
+            : "Textdatei geladen";
+      setOcrStatus(`${sourceText} – prüfe die erkannten Zeilen rechts.`);
+    } catch {
+      setOcrStatus(
+        "Lokale Texterkennung konnte nicht geladen werden (ggf. offline). Du kannst E-Bon-PDFs oder kopierten Text direkt einfügen.",
+      );
+    } finally {
+      setIsExtractingFile(false);
+    }
+  };
 
   return (
     <section aria-labelledby="receipt-title">
@@ -54,14 +90,47 @@ export const ReceiptImportPanel = ({
         Kassenbon einlesen
       </h2>
       <p className="mt-2 max-w-[70ch] text-[15px]">
-        Füge den Text eines Kassenbons oder E-Bons ein, etwa aus Lidl Plus oder Rewe eBon. Die App
-        erkennt Kette, PLZ, Datum, Wiegeware, Mehrfachmengen und Rabatte und lässt Pfand und Summe
-        weg. Unbekannte Kürzel ordnest du einmal zu, danach erkennt die App sie selbst.
+        Fotografiere deinen Papier-Kassenbon (lokale Browser-OCR), lade ein E-Bon-PDF hoch oder füge
+        den Text ein. Die App erkennt Kette, PLZ, Datum, Wiegeware, Mehrfachmengen und Rabatte und
+        lässt Pfand und Summe weg. Unbekannte Kürzel ordnest du einmal zu, danach erkennt die App sie
+        selbst.
       </p>
       <p className="mt-1 text-sm text-muted">{learnedAliasCount} gelernte Kürzel</p>
 
       <div className="mt-5 grid items-start gap-8 lg:grid-cols-12">
         <div className="min-w-0 lg:col-span-5">
+          <div className="mb-3 rounded-md border border-dashed border-line-strong bg-panel p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-extrabold">Foto oder E-Bon-PDF lokal einlesen</p>
+                <p className="text-xs text-muted">
+                  Läuft direkt auf deinem Gerät (Tesseract.js OCR / PDF-Parser, keine Cloud-KI)
+                </p>
+              </div>
+              <label
+                className={cn(
+                  SECONDARY_BUTTON,
+                  "cursor-pointer",
+                  isExtractingFile && "pointer-events-none opacity-60",
+                )}
+              >
+                {isExtractingFile ? "Lese ein…" : "Foto / PDF wählen"}
+                <input
+                  type="file"
+                  accept="image/*,.pdf,.txt"
+                  capture="environment"
+                  onChange={(event) => void handleReceiptFileChange(event)}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+            {ocrStatus && (
+              <p role="status" className="mt-2 text-xs font-bold text-route">
+                {ocrStatus}
+              </p>
+            )}
+          </div>
+
           <label className="block">
             <span className="text-[15px] font-bold">Bon-Text</span>
             <textarea

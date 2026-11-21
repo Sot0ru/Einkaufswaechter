@@ -144,6 +144,8 @@ export const importReceiptObservations = async (
       priceCents: item.effectivePriceCents,
       isOffer: item.isOffer,
       receiptDate: input.receiptDate,
+      packageAmount: item.packageAmount ?? category.standardAmount,
+      packageUnit: item.packageUnit ?? category.unit,
     });
     observationsInserted += 1;
 

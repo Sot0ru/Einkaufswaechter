@@ -31,7 +31,13 @@
 - [x] Persistente Einkaufslisten (`/api/v1/lists`) & eigene 1-Klick-Basispreis-Korrektur im Laden (`/api/v1/base-prices`).
 - [x] **Kassenbon / E-Bon Crowdsourcing (`/api/v1/receipts/import`):** Deterministischer Kassenbon-Parser (Kette, PLZ, Wiegeware `kg × €/kg`, Mehrfachmengen, Rabatt-/App-Coupon-Zeilen, Pfand-Filter) + selbstlernendes Kürzel-Wörterbuch (`receipt_aliases`) und `receipt_observations`.
 
-## Ausbaustufe 3: Gerichte-Baukasten & Haushalts-Sync
+## Ausbaustufe 3: Datenqualität, Gerichte-Baukasten & Haushalts-Sync
 
-- [ ] Eigene Gerichte/Rezepte speichern und mit 1 Klick auf die Wochenliste setzen.
-- [ ] Geteilte Haushalts-Listen per Einladungs-Link.
+- [x] **Noch echtere Preise & Datenqualität (Paket 1):**
+  - 90-Tage-Preishistorie, Schnäppchen-Ampel (*Echter Tiefstpreis*, *Gutes Angebot*, *Schein-Angebot*) & Shrinkflation-Wächter (`src/lib/rules/price-intelligence.ts`, `/api/v1/price-history`).
+  - Preiskonfidenz-Badges (*Live-Angebot*, *Per Bon/Scan geprüft*, *Von dir angepasst*, *Richtpreis*) in Vergleich, Abhakliste und Angebotsliste.
+  - Barcode-Scanner im Laden mit Open Food Facts API, lokalem DB-Cache (`barcode_products`) & Offline-Demo-Referenz (`src/lib/providers/barcode-lookup.ts`, `/api/v1/barcode`, `BarcodeScannerPanel.tsx`).
+  - Lokale Kassenbon-Foto-OCR im Browser (`tesseract.js`) & E-Bon-PDF-Import (`src/lib/providers/browser-ocr.ts`).
+  - Zero-Dependency PDF-/HTML-Prospekt-Dropzone (`src/lib/providers/pdf-brochure-parser.ts`) direkt im Angebots-Tab.
+- [ ] **Smartere Einkaufs- & Optimierungslogik (Paket 2 – `docs/paket-6-smarte-optimierung.md`):** Gerichte-Baukasten („Was ist diese Woche günstig zu kochen?“), Eigenmarke/Bio/Marke-Filter, Vorrats-Tipp & Entfernungs-Gewichtung im Smart-Split.
+- [ ] **Alltag im Laden & Haushalt (Paket 3 – `docs/paket-7-alltag-haushalt.md`):** Geteilte Haushalts-Liste per Link/QR-Code, Wochen-Alert für Lieblingsprodukte & Kassenzettel-Gegencheck.
