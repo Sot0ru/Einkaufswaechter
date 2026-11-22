@@ -41,3 +41,15 @@
   - Zero-Dependency PDF-/HTML-Prospekt-Dropzone (`src/lib/providers/pdf-brochure-parser.ts`) direkt im Angebots-Tab.
 - [x] **Smartere Einkaufs- & Optimierungslogik (Paket 2 – `docs/paket-6-smarte-optimierung.md`):** Gerichte-Baukasten („Was ist diese Woche günstig zu kochen?“), Eigenmarke/Bio/Marke-Filter, Vorrats-Tipp & Entfernungs-Gewichtung im Smart-Split.
 - [x] **Alltag im Laden & Haushalt (Paket 3 – `docs/paket-7-alltag-haushalt.md`):** Geteilte Haushalts-Liste per Link/QR-Code, Wochen-Alert für Lieblingsprodukte & Kassenzettel-Gegencheck.
+
+## Ausbaustufe 4: Vollsortiment & echte Filial-Daten (OSM)
+
+- [x] **Vollsortiment & Eigene Artikel (Paket 8):**
+  - Ausbau des Standard-Katalogs von 240 auf **405 normierte Alltags-Kategorien** über alle 8 Abteilungen (`src/lib/rules/catalog-vollsortiment.ts`, `src/lib/rules/catalog.ts`) mit 2.835 Eigenmarken-Referenzpreisen und vollständigen Matcher-Kollisionstests.
+  - Intelligente Marken- & Synonym-Suche (`searchCatalogCategories`, z. B. *Nutella*, *Pampers*, *Pringles*, *Kerrygold*).
+  - Freie **Eigene Artikel** (`CustomBasketItem`) in Einkaufsliste und Laufroute im Laden (inkl. `localStorage`/PWA-Persistenz).
+- [x] **Echte Filial-Entfernungen, Öffnungszeiten & Feiertags-Wächter (Paket 9):**
+  - Kostenlose OpenStreetMap/Overpass- & Nominatim-Anbindung (`src/lib/providers/store-locator.ts`, `GET /api/v1/stores/nearby`) mit 7-Tage-DB-Cache (`store_locations`) und Offline-Fallback.
+  - Deterministischer OSM-`opening_hours`-Parser und deutscher Feiertags-Rechner nach PLZ-Bundesland (`src/lib/rules/opening-hours.ts`) inkl. automatischer Übernahme realer Wegzeiten in die Smart-Split-Umweg-Minuten sowie Karten-Links in `CompareView` und `InStoreView`.
+- [ ] **Haushaltsbudget, Einkaufs-Archiv & Spar-Bilanz (Paket 10):** Monats-/Wochenbudget, Einkaufs-Archiv mit realer Ersparnis-Bilanz und CSV-Export.
+- [ ] **Vorratsschrank, MHD-Radar & 7-Tage-Wochen-Essensplan (Paket 11):** Doppelkauf-Schutz, Reste-Küche & Pfand-/Leergut-Rechner.

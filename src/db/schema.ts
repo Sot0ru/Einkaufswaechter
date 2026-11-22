@@ -175,3 +175,27 @@ export const householdShares = pgTable("household_shares", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+export const storeLocations = pgTable(
+  "store_locations",
+  {
+    zipCode: text("zip_code").notNull(),
+    storeId: text("store_id")
+      .notNull()
+      .references(() => stores.id, { onDelete: "cascade" }),
+    storeName: text("store_name").notNull(),
+    branchName: text("branch_name").notNull(),
+    address: text("address").notNull(),
+    city: text("city").notNull(),
+    lat: text("lat").notNull(),
+    lon: text("lon").notNull(),
+    distanceMeters: integer("distance_meters").notNull(),
+    walkMinutes: integer("walk_minutes").notNull(),
+    driveMinutes: integer("drive_minutes").notNull(),
+    detourMinutes: integer("detour_minutes").notNull(),
+    openingHours: text("opening_hours").notNull(),
+    source: text("source").default("osm_overpass").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.zipCode, table.storeId] })],
+);

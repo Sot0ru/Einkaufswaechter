@@ -46,3 +46,7 @@
   - Wochen-Radar für Stammprodukte mit „Alle auf die Liste“ und Montags-Erinnerung als `.ics` (`/api/v1/favorites`).
   - Kassenzettel-Gegencheck nach dem Bon-Import mit Übernahme abweichender Normalpreise.
   - Tests in `src/lib/__tests__/household-sync.test.ts`.
+- **Ausbaustufe 4 – Pakete 8 & 9 (Vollsortiment 405 Kategorien + Echte OSM-Filialen & Öffnungszeiten):** Umgesetzt durch Antigravity.
+  - **Vollsortiment (`src/lib/rules/catalog-vollsortiment.ts`, `src/lib/rules/catalog.ts`):** Ausbau von 240 auf **405 normierte Alltags-Kategorien** über alle 8 Abteilungen (2.835 Eigenmarken-Basispreise, Batch-Seeding in `src/db/seed.ts`), Marken-/Synonym-Suche (`searchCatalogCategories`) sowie freie **Eigene Artikel** in `ShoppingListView.tsx` und `InStoreView.tsx`.
+  - **Echte Filial-Entfernungen & Öffnungszeiten (`src/lib/providers/store-locator.ts`, `src/lib/rules/opening-hours.ts`, `src/lib/services/store-locations.ts`, `GET /api/v1/stores/nearby`):** OpenStreetMap Overpass/Nominatim-Abfrage (funktioniert serverseitig mit 7-Tage-DB-Cache `store_locations` und clientseitig in der PWA), deutscher Feiertags-Rechner nach PLZ-Bundesland, `opening_hours`-Parser, automatische Übernahme der Wegzeiten in `storeDetourMinutes` sowie Filial-Adressen, Öffnungsstatus und Karten-Links in `SettingsPanel`, `CompareView` und `InStoreView`.
+  - Tests in `src/lib/__tests__/store-locator.test.ts` und aktualisierte Voll-Katalog-Tests in `src/lib/__tests__/matcher.test.ts`.
