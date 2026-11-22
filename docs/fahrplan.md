@@ -39,5 +39,5 @@
   - Barcode-Scanner im Laden mit Open Food Facts API, lokalem DB-Cache (`barcode_products`) & Offline-Demo-Referenz (`src/lib/providers/barcode-lookup.ts`, `/api/v1/barcode`, `BarcodeScannerPanel.tsx`).
   - Lokale Kassenbon-Foto-OCR im Browser (`tesseract.js`) & E-Bon-PDF-Import (`src/lib/providers/browser-ocr.ts`).
   - Zero-Dependency PDF-/HTML-Prospekt-Dropzone (`src/lib/providers/pdf-brochure-parser.ts`) direkt im Angebots-Tab.
-- [ ] **Smartere Einkaufs- & Optimierungslogik (Paket 2 – `docs/paket-6-smarte-optimierung.md`):** Gerichte-Baukasten („Was ist diese Woche günstig zu kochen?“), Eigenmarke/Bio/Marke-Filter, Vorrats-Tipp & Entfernungs-Gewichtung im Smart-Split.
-- [ ] **Alltag im Laden & Haushalt (Paket 3 – `docs/paket-7-alltag-haushalt.md`):** Geteilte Haushalts-Liste per Link/QR-Code, Wochen-Alert für Lieblingsprodukte & Kassenzettel-Gegencheck.
+- [x] **Smartere Einkaufs- & Optimierungslogik (Paket 2 – `docs/paket-6-smarte-optimierung.md`):** Gerichte-Baukasten („Was ist diese Woche günstig zu kochen?“), Eigenmarke/Bio/Marke-Filter, Vorrats-Tipp & Entfernungs-Gewichtung im Smart-Split.
+- [x] **Alltag im Laden & Haushalt (Paket 3 – `docs/paket-7-alltag-haushalt.md`):** Geteilte Haushalts-Liste per Link/QR-Code, Wochen-Alert für Lieblingsprodukte & Kassenzettel-Gegencheck.

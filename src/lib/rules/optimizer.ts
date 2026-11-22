@@ -7,6 +7,17 @@ import {
   type StoreId,
 } from "./catalog";
 import { computeUnitPriceCents } from "./matcher";
+import {
+  type ItemPreference,
+  offerMatchesPreference,
+  resolvePreferenceBasePrice,
+} from "./preferences";
+
+/** Ab diesem Rabatt gegenüber Normalpreis lohnt sich bei haltbaren Artikeln ein Vorrat */
+export const STOCK_UP_MIN_DISCOUNT = 0.25;
+
+/** Standard: Ein Umweg muss mindestens 50 ct Ersparnis pro Minute bringen */
+export const DEFAULT_MIN_SAVINGS_PER_DETOUR_MINUTE_CENTS = 50;
 
 export interface OfferRecord {
   id: string;
@@ -28,6 +39,8 @@ export interface OfferRecord {
 export interface BasketItemInput {
   categoryId: string;
   quantity: number;
+  /** Gewünschte Produktqualität, Standard: günstigste Option */
+  preference?: ItemPreference;
 }
 
 export interface ResolvedStoreItem {
@@ -58,6 +71,10 @@ export interface ResolvedStoreItem {
   packsToBuy: number;
   /** Optionaler Hinweis auf eine Aktions-Großpackung mit günstigerem Grundpreis (€/kg bzw. €/L) */
   bulkPackHint: string | null;
+  /** Gewünschte Produktqualität, gegen deren Normalpreis bewertet wurde */
+  preference: ItemPreference;
+  /** Vorratstipp bei haltbaren Artikeln, die mindestens 25 % unter Normalpreis liegen */
+  stockUpHint: string | null;
 }
 
 export interface DepartmentGroup {
@@ -91,8 +108,15 @@ export interface TwoStoreSplitResult {
   /** Zusätzliche Ersparnis gegenüber dem besten einzelnen Supermarkt */
   extraSavingsVsBestSingleCents: number;
   secondStoreThresholdCents: number;
-  /** Lohnt sich der 2. Laden gemäß eingestellter Schwelle (z. B. >= 5,00 €)? */
+  /** Lohnt sich der 2. Laden gemäß Euro-Schwelle UND Umweg-Effizienz? */
   worthSecondStore: boolean;
+  /** Persönlicher Umweg zum Zweitladen in Minuten (0 = nicht angegeben) */
+  detourMinutes: number;
+  /** Zusatz-Ersparnis pro Umweg-Minute in Cent, falls ein Umweg angegeben ist */
+  savingsPerDetourMinuteCents: number | null;
+  minSavingsPerDetourMinuteCents: number;
+  /** Erfüllt der Abstecher die Mindest-Ersparnis pro Umweg-Minute? (ohne Umweg-Angabe immer true) */
+  meetsDetourEfficiency: boolean;
   primaryStoreTotalCents: number;
   secondaryStoreTotalCents: number;
   primaryItems: ResolvedStoreItem[];
@@ -111,6 +135,10 @@ export interface OptimizationInput {
   secondStoreThresholdCents?: number;
   offers: readonly OfferRecord[];
   customBasePrices?: Record<string, Partial<Record<StoreId, { priceCents: number; productLabel: string }>>>;
+  /** Persönlicher Umweg je Markt in Minuten, z. B. { lidl: 3, kaufland: 15 } */
+  storeDetourMinutes?: Partial<Record<StoreId, number>>;
+  /** Mindest-Zusatzersparnis pro Umweg-Minute in Cent (Standard: 50) */
+  minSavingsPerDetourMinuteCents?: number;
 }
 
 export interface OptimizationOutput {
@@ -178,9 +206,11 @@ export const resolveStoreItemPrice = (params: {
   hasLoyaltyApp: boolean;
   offers: readonly OfferRecord[];
   customBasePrices?: OptimizationInput["customBasePrices"];
+  preference?: ItemPreference;
 }): ResolvedStoreItem => {
   const { categoryId, quantity, storeId, shoppingDate, hasLoyaltyApp, offers, customBasePrices } =
     params;
+  const preference = params.preference ?? "cheapest";
   const category = CATEGORY_MAP[categoryId];
   if (!category) {
     throw new Error(`Unbekannte Kategorie: ${categoryId}`);
@@ -188,8 +218,11 @@ export const resolveStoreItemPrice = (params: {
 
   const store = STORE_MAP[storeId];
   const department = DEPARTMENT_MAP[category.department];
-  const baseEntry =
-    customBasePrices?.[categoryId]?.[storeId] ?? category.defaultBasePrices[storeId];
+  const baseEntry = resolvePreferenceBasePrice({
+    category,
+    storeBaseEntry: customBasePrices?.[categoryId]?.[storeId] ?? category.defaultBasePrices[storeId],
+    preference,
+  });
 
   const neededTotalAmount = quantity * category.standardAmount;
   const regularCheckoutCents = quantity * baseEntry.priceCents;
@@ -200,12 +233,14 @@ export const resolveStoreItemPrice = (params: {
   );
   const uLabel = unitDisplayLabel(category.unit);
 
-  // Alle am Einkaufstag gültigen Angebote dieser Kette für diese Kategorie prüfen
+  // Alle am Einkaufstag gültigen Angebote dieser Kette für diese Kategorie prüfen,
+  // die zur gewünschten Produktqualität passen (Bio, Marke oder beliebig)
   const matchingOffers = offers.filter(
     (o) =>
       o.storeId === storeId &&
       o.categoryId === categoryId &&
-      isOfferValidOnDate(o, shoppingDate),
+      isOfferValidOnDate(o, shoppingDate) &&
+      offerMatchesPreference({ offerTitle: o.title, category, storeId, preference }),
   );
 
   let bestCheckoutCents = regularCheckoutCents;
@@ -273,6 +308,14 @@ export const resolveStoreItemPrice = (params: {
     }
   }
 
+  const savingsCents = Math.max(0, regularCheckoutCents - bestCheckoutCents);
+  const stockUpHint =
+    category.isPantryStaple &&
+    isOffer &&
+    bestCheckoutCents <= Math.round(regularCheckoutCents * (1 - STOCK_UP_MIN_DISCOUNT))
+      ? `Vorratstipp: ${quantity * 2}× statt ${quantity}× mitnehmen spart zusätzlich ${formatEuroCents(savingsCents)} gegenüber Normalpreis.`
+      : null;
+
   return {
     categoryId: category.id,
     categoryName: category.name,
@@ -286,7 +329,7 @@ export const resolveStoreItemPrice = (params: {
     requestedQuantity: quantity,
     checkoutCents: bestCheckoutCents,
     regularCheckoutCents,
-    savingsCents: Math.max(0, regularCheckoutCents - bestCheckoutCents),
+    savingsCents,
     unitPriceCents: bestUnitPriceCents,
     unitLabel: uLabel,
     isOffer,
@@ -295,11 +338,15 @@ export const resolveStoreItemPrice = (params: {
     productLabel: bestProductLabel,
     packsToBuy: bestPacksToBuy,
     bulkPackHint: bestOfferBulkNote ?? alternativeBulkHint,
+    preference,
+    stockUpHint,
   };
 };
 
 export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOutput => {
   const secondStoreThresholdCents = input.secondStoreThresholdCents ?? 500;
+  const minSavingsPerDetourMinuteCents =
+    input.minSavingsPerDetourMinuteCents ?? DEFAULT_MIN_SAVINGS_PER_DETOUR_MINUTE_CENTS;
   const activeItems = input.items.filter(
     (item) => item.quantity > 0 && CATEGORY_MAP[item.categoryId] != null,
   );
@@ -329,6 +376,7 @@ export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOu
         hasLoyaltyApp: loyaltySet.has(storeId),
         offers: input.offers,
         customBasePrices: input.customBasePrices,
+        preference: item.preference,
       }),
     );
 
@@ -417,11 +465,22 @@ export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOu
           bestSingleStore.totalCheckoutCents - totalCheckoutCents,
         );
 
+        // Umweg-Gewichtung: Der Abstecher muss pro Minute genug Zusatz-Ersparnis bringen
+        const detourMinutes = Math.max(0, input.storeDetourMinutes?.[secondaryStoreId] ?? 0);
+        const meetsDetourEfficiency =
+          detourMinutes === 0 ||
+          extraSavingsVsBestSingleCents >= detourMinutes * minSavingsPerDetourMinuteCents;
+        const worthSecondStore =
+          extraSavingsVsBestSingleCents >= secondStoreThresholdCents && meetsDetourEfficiency;
+
+        // Lohnende Abstecher gehen vor; danach zählt der Kassenpreis, dann weniger Zweitladen-Artikel
         const isBetterThanCurrentBest =
           bestSplit == null ||
-          totalCheckoutCents < bestSplit.totalCheckoutCents ||
-          (totalCheckoutCents === bestSplit.totalCheckoutCents &&
-            secondaryItems.length < bestSplit.secondaryItems.length);
+          (worthSecondStore && !bestSplit.worthSecondStore) ||
+          (worthSecondStore === bestSplit.worthSecondStore &&
+            (totalCheckoutCents < bestSplit.totalCheckoutCents ||
+              (totalCheckoutCents === bestSplit.totalCheckoutCents &&
+                secondaryItems.length < bestSplit.secondaryItems.length)));
 
         if (isBetterThanCurrentBest) {
           bestSplit = {
@@ -434,7 +493,12 @@ export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOu
             totalSavingsCents,
             extraSavingsVsBestSingleCents,
             secondStoreThresholdCents,
-            worthSecondStore: extraSavingsVsBestSingleCents >= secondStoreThresholdCents,
+            worthSecondStore,
+            detourMinutes,
+            savingsPerDetourMinuteCents:
+              detourMinutes > 0 ? Math.floor(extraSavingsVsBestSingleCents / detourMinutes) : null,
+            minSavingsPerDetourMinuteCents,
+            meetsDetourEfficiency,
             primaryStoreTotalCents,
             secondaryStoreTotalCents,
             primaryItems,

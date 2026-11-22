@@ -147,7 +147,7 @@ const RouteLine = ({ row, departmentIds, gridTemplateColumns, lineStyle, isFirst
             >
               {stop.sortOrder}
             </span>
-            <span className="text-[13px] leading-snug">
+            <span className="w-full text-[13px] leading-snug hyphens-auto [overflow-wrap:anywhere]">
               <span className="sr-only">{stop.departmentName}: </span>
               {describeStopItems(stop.items)}
             </span>

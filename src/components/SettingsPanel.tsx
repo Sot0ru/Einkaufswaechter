@@ -1,11 +1,16 @@
 import type { ZipRegionInfo } from "@/lib/providers/zip-offer-fetcher";
-import { STORES, type StoreId } from "@/lib/rules/catalog";
+import { STORE_MAP, STORES, type StoreId } from "@/lib/rules/catalog";
 import { formatThreshold } from "./format";
 import { SegmentedControl, ToggleChip } from "./ui";
 
 const THRESHOLD_OPTIONS = [250, 500, 750, 1000].map((cents) => ({
   value: cents,
   label: formatThreshold(cents),
+}));
+
+const DETOUR_RATE_OPTIONS = [30, 50, 80, 100].map((cents) => ({
+  value: cents,
+  label: cents === 100 ? "1 €" : `${cents} ct`,
 }));
 
 const SHOPPING_DAY_OPTIONS = [
@@ -28,6 +33,10 @@ interface SettingsPanelProps {
   onToggleStore: (storeId: StoreId) => void;
   enabledLoyaltyApps: readonly StoreId[];
   onToggleLoyaltyApp: (storeId: StoreId) => void;
+  storeDetourMinutes: Partial<Record<StoreId, number>>;
+  onDetourMinutesChange: (storeId: StoreId, minutes: number) => void;
+  minSavingsPerDetourMinuteCents: number;
+  onMinSavingsPerDetourMinuteChange: (cents: number) => void;
 }
 
 export const SettingsPanel = ({
@@ -43,6 +52,10 @@ export const SettingsPanel = ({
   onToggleStore,
   enabledLoyaltyApps,
   onToggleLoyaltyApp,
+  storeDetourMinutes,
+  onDetourMinutesChange,
+  minSavingsPerDetourMinuteCents,
+  onMinSavingsPerDetourMinuteChange,
 }: SettingsPanelProps) => (
   <aside
     id="einstellungen"
@@ -132,5 +145,48 @@ export const SettingsPanel = ({
         </div>
       </fieldset>
     </div>
+
+    {enabledStores.length >= 2 && (
+      <details className="border-t border-line-strong pt-5">
+        <summary className="min-h-11 cursor-pointer text-[15px] font-bold">Umwege zu den Märkten</summary>
+        <p className="mt-1 text-sm text-muted">
+          Wie viele Minuten Umweg bedeutet ein Markt für dich? Ein Abstecher kommt nur dazu, wenn er pro
+          Minute genug spart. Leer lassen heißt: kein Umweg.
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          {enabledStores.map((storeId) => (
+            <label key={storeId} className="flex items-center justify-between gap-2 text-sm font-semibold">
+              {STORE_MAP[storeId].shortName}
+              <span className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  inputMode="numeric"
+                  value={storeDetourMinutes[storeId] ?? ""}
+                  onChange={(event) =>
+                    onDetourMinutesChange(storeId, Math.max(0, Math.min(120, Number(event.target.value) || 0)))
+                  }
+                  aria-label={`Umweg zu ${STORE_MAP[storeId].shortName} in Minuten`}
+                  className="h-11 w-16 rounded border border-line-strong bg-paper px-2 pt-0.5 text-right font-semibold tabular-nums"
+                />
+                <span aria-hidden="true" className="text-muted">
+                  Min.
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-4 flex flex-col gap-1.5">
+          <span className="text-sm font-bold">Mindestens so viel Ersparnis pro Minute</span>
+          <SegmentedControl
+            label="Mindest-Ersparnis pro Umweg-Minute"
+            options={DETOUR_RATE_OPTIONS}
+            value={minSavingsPerDetourMinuteCents}
+            onChange={onMinSavingsPerDetourMinuteChange}
+          />
+        </div>
+      </details>
+    )}
   </aside>
 );

@@ -180,3 +180,182 @@ describe("Warenkorb-Optimierer (optimizer.ts)", () => {
     expect(resolved.bulkPackHint).toContain("5,50 €/kg");
   });
 });
+
+describe("Paket 6: Produkt-Präferenz, Vorratstipp und Umweg-Gewichtung", () => {
+  const offer = (
+    id: string,
+    storeId: OfferRecord["storeId"],
+    categoryId: string,
+    title: string,
+    priceCents: number,
+    packageAmount: number,
+  ): OfferRecord => ({
+    id,
+    storeId,
+    categoryId,
+    title,
+    priceCents,
+    loyaltyPriceCents: null,
+    requiresLoyaltyApp: false,
+    packageAmount,
+    packageUnit: "g",
+    validFrom: "2026-11-16",
+    validTo: "2026-11-21",
+  });
+
+  const butterOffers = [
+    offer("lidl-eigenmarke", "lidl", "butter_250g", "Milbona Deutsche Markenbutter 250 g", 149, 250),
+    offer("lidl-bio", "lidl", "butter_250g", "Bio Butter Bioland 250 g", 299, 250),
+    offer("lidl-marke", "lidl", "butter_250g", "Kerrygold Original Irische Butter 250 g", 229, 250),
+  ];
+
+  const resolveButter = (preference?: "cheapest" | "bio" | "brand") =>
+    resolveStoreItemPrice({
+      categoryId: "butter_250g",
+      quantity: 1,
+      storeId: "lidl",
+      shoppingDate: "2026-11-18",
+      hasLoyaltyApp: false,
+      offers: butterOffers,
+      preference,
+    });
+
+  it("nimmt ohne Präferenz unverändert das günstigste Angebot", () => {
+    const resolved = resolveButter();
+    expect(resolved.preference).toBe("cheapest");
+    expect(resolved.checkoutCents).toBe(149);
+    expect(resolved.regularCheckoutCents).toBe(239);
+  });
+
+  it("wertet bei Bio nur Bio-Angebote und rechnet gegen einen Bio-Normalpreis", () => {
+    const resolved = resolveButter("bio");
+    expect(resolved.productLabel).toBe("Bio Butter Bioland 250 g");
+    expect(resolved.checkoutCents).toBe(299);
+    // 2,39 € × 1,6 = 3,82 € → Regalpreis 3,79 €
+    expect(resolved.regularCheckoutCents).toBe(379);
+    expect(resolved.savingsCents).toBe(80);
+  });
+
+  it("ignoriert bei Marke die Eigenmarken-Angebote und bewertet gegen einen Marken-Referenzpreis", () => {
+    const resolved = resolveButter("brand");
+    expect(resolved.productLabel).toBe("Kerrygold Original Irische Butter 250 g");
+    expect(resolved.checkoutCents).toBe(229);
+    // 2,39 € × 1,8 = 4,30 € → Regalpreis 4,29 €
+    expect(resolved.regularCheckoutCents).toBe(429);
+  });
+
+  it("schlägt bei Bio-Kategorien keinen zusätzlichen Bio-Aufschlag auf", () => {
+    const plain = resolveStoreItemPrice({
+      categoryId: "bio_vollmilch_1l",
+      quantity: 1,
+      storeId: "rewe",
+      shoppingDate: "2026-11-18",
+      hasLoyaltyApp: false,
+      offers: [],
+    });
+    const bio = resolveStoreItemPrice({
+      categoryId: "bio_vollmilch_1l",
+      quantity: 1,
+      storeId: "rewe",
+      shoppingDate: "2026-11-18",
+      hasLoyaltyApp: false,
+      offers: [],
+      preference: "bio",
+    });
+    expect(bio.regularCheckoutCents).toBe(plain.regularCheckoutCents);
+  });
+
+  it("gibt einen Vorratstipp nur bei haltbaren Artikeln mit mindestens 25 % Rabatt", () => {
+    const offers = [
+      offer("kaffee", "lidl", "filterkaffee_500g", "Bellarom Gold Aktion 500 g", 349, 500),
+      offer("pasta", "lidl", "pasta_500g", "Combino Spaghetti 500 g", 69, 500),
+      offer("butter", "lidl", "butter_250g", "Kerrygold Irische Butter 250 g", 149, 250),
+    ];
+    const resolve = (categoryId: string, quantity: number) =>
+      resolveStoreItemPrice({
+        categoryId,
+        quantity,
+        storeId: "lidl",
+        shoppingDate: "2026-11-18",
+        hasLoyaltyApp: false,
+        offers,
+      });
+
+    // Kaffee: 3,49 € statt 4,99 € (−30 %) → Tipp mit der Ersparnis einer weiteren Menge
+    expect(resolve("filterkaffee_500g", 2).stockUpHint).toBe(
+      "Vorratstipp: 4× statt 2× mitnehmen spart zusätzlich 3,00 € gegenüber Normalpreis.",
+    );
+    // Pasta: nur −13 %
+    expect(resolve("pasta_500g", 1).stockUpHint).toBeNull();
+    // Butter ist nicht lange haltbar, trotz −38 %
+    expect(resolve("butter_250g", 1).stockUpHint).toBeNull();
+  });
+
+  describe("Umweg-Gewichtung im Smart-Split", () => {
+    const splitOffers = [
+      offer("rewe-butter", "rewe", "butter_250g", "Kerrygold Irische Butter 250 g", 149, 250),
+      offer("lidl-kaffee", "lidl", "filterkaffee_500g", "Bellarom Gold Aktion 500 g", 349, 500),
+    ];
+    const baseInput = {
+      items: [
+        { categoryId: "vollmilch_1l", quantity: 2 },
+        { categoryId: "pasta_500g", quantity: 2 },
+        { categoryId: "eier_10st", quantity: 1 },
+        { categoryId: "filterkaffee_500g", quantity: 2 },
+        { categoryId: "butter_250g", quantity: 4 },
+      ],
+      enabledStores: ["lidl", "rewe"] as OfferRecord["storeId"][],
+      enabledLoyaltyApps: [],
+      shoppingDate: "2026-11-18",
+      secondStoreThresholdCents: 250,
+      offers: splitOffers,
+    };
+
+    it("verhält sich ohne Umweg-Angaben wie bisher", () => {
+      const result = optimizeShoppingBasket(baseInput);
+      const split = result.bestTwoStoreSplit!;
+      expect(split.extraSavingsVsBestSingleCents).toBe(360);
+      expect(split.detourMinutes).toBe(0);
+      expect(split.savingsPerDetourMinuteCents).toBeNull();
+      expect(split.meetsDetourEfficiency).toBe(true);
+      expect(result.recommendedStrategy).toBe("split");
+    });
+
+    it("empfiehlt keinen Abstecher, wenn er pro Minute zu wenig spart", () => {
+      // 3,60 € Zusatz-Ersparnis bei 10 Minuten Umweg = 36 ct/Min. < 50 ct/Min.
+      const result = optimizeShoppingBasket({
+        ...baseInput,
+        storeDetourMinutes: { lidl: 10, rewe: 10 },
+      });
+      const split = result.bestTwoStoreSplit!;
+      expect(split.detourMinutes).toBe(10);
+      expect(split.savingsPerDetourMinuteCents).toBe(36);
+      expect(split.meetsDetourEfficiency).toBe(false);
+      expect(split.worthSecondStore).toBe(false);
+      expect(result.recommendedStrategy).toBe("single");
+    });
+
+    it("macht den nahen Markt zum Abstecher, wenn sich nur dieser Umweg lohnt", () => {
+      const result = optimizeShoppingBasket({
+        ...baseInput,
+        storeDetourMinutes: { lidl: 2, rewe: 10 },
+      });
+      const split = result.bestTwoStoreSplit!;
+      expect(split.secondaryStoreId).toBe("lidl");
+      expect(split.primaryStoreId).toBe("rewe");
+      expect(split.savingsPerDetourMinuteCents).toBe(180);
+      expect(split.worthSecondStore).toBe(true);
+      expect(result.recommendedStrategy).toBe("split");
+    });
+
+    it("berücksichtigt eine eigene Mindest-Ersparnis pro Minute", () => {
+      const result = optimizeShoppingBasket({
+        ...baseInput,
+        storeDetourMinutes: { lidl: 10, rewe: 10 },
+        minSavingsPerDetourMinuteCents: 30,
+      });
+      expect(result.bestTwoStoreSplit!.worthSecondStore).toBe(true);
+      expect(result.recommendedStrategy).toBe("split");
+    });
+  });
+});

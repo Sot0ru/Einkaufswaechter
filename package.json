@@ -19,6 +19,7 @@
     "geist": "^1.9.2",
     "next": "16.4.6",
     "postgres": "^4.1.1",
+    "qrcode-generator": "2.0.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tesseract.js": "^7.0.0",

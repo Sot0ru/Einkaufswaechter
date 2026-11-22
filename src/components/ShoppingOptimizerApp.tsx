@@ -23,12 +23,22 @@ import {
   STORES,
   type StoreId,
 } from "@/lib/rules/catalog";
+import { buildFavoritesReminderIcs, evaluateFavoriteAlerts } from "@/lib/rules/favorites";
 import {
   type BasketItemInput,
+  DEFAULT_MIN_SAVINGS_PER_DETOUR_MINUTE_CENTS,
   formatEuroCents,
   type OfferRecord,
   optimizeShoppingBasket,
 } from "@/lib/rules/optimizer";
+import type { ItemPreference } from "@/lib/rules/preferences";
+import { reconcileReceiptWithBasket, type ReconciliationResult } from "@/lib/rules/receipt-reconciliation";
+import {
+  addRecipeToBasket,
+  BUILTIN_RECIPES,
+  type RecipeDefinition,
+  scoreRecipesForWeek,
+} from "@/lib/rules/recipes";
 import {
   buildCategoryPriceStats,
   buildVerifiedKey,
@@ -40,14 +50,18 @@ import type { SavedShoppingList } from "@/lib/services/shopping-lists";
 import { type AppTab, BottomNav, LegalFooter, SiteHeader } from "./AppChrome";
 import { type BarcodeSavePayload, BarcodeScannerPanel } from "./BarcodeScannerPanel";
 import { CompareView } from "./CompareView";
+import { FavoriteAlertsCard } from "./FavoriteAlertsCard";
 import { formatWeekday } from "./format";
 import { InStoreView } from "./InStoreView";
 import { OffersView } from "./OffersView";
-import type { InStoreMode } from "./plan";
+import { type InStoreMode, resolvePlan } from "./plan";
 import { ReceiptImportPanel } from "./ReceiptImportPanel";
+import type { ReconciliationView } from "./ReceiptReconciliation";
+import { RecipesPanel } from "./RecipesPanel";
 import { SavedListsPanel } from "./SavedListsPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { ShoppingListView } from "./ShoppingListView";
+import { useHouseholdShare } from "./useHouseholdShare";
 import { ZipOffersPanel } from "./ZipOffersPanel";
 
 export const MOBILE_STORAGE_KEY = "einkaufswaechter_mobile_v1";
@@ -62,6 +76,28 @@ export interface ShoppingOptimizerAppProps {
   initialBasketItems?: BasketItemInput[];
   initialZipCode?: string;
   initialCheckedKeys?: Record<string, boolean>;
+  initialRecipes?: RecipeDefinition[];
+  initialFavoriteCategoryIds?: string[];
+  initialStoreDetourMinutes?: Partial<Record<StoreId, number>>;
+  initialMinSavingsPerDetourMinuteCents?: number;
+}
+
+/** Abgehakt-Status gilt pro Kategorie, egal in welchem Markt sie auf der Route liegt */
+const applyCategoryChecks = (
+  previous: Record<string, boolean>,
+  checks: Record<string, boolean>,
+): Record<string, boolean> => {
+  const next = { ...previous };
+  for (const [categoryId, checked] of Object.entries(checks)) {
+    for (const store of STORES) next[`${store.id}:${categoryId}`] = checked;
+  }
+  return next;
+};
+
+interface ReconciliationState {
+  storeId: StoreId;
+  result: ReconciliationResult;
+  weighedCategoryIds: string[];
 }
 
 const SAMPLE_BROCHURE_TEXT = `Kerrygold Original Irische Butter 250-g-Packung 1,49 €
@@ -83,6 +119,10 @@ export function ShoppingOptimizerApp({
   initialBasketItems,
   initialZipCode = "10115",
   initialCheckedKeys = {},
+  initialRecipes,
+  initialFavoriteCategoryIds = [],
+  initialStoreDetourMinutes = {},
+  initialMinSavingsPerDetourMinuteCents = DEFAULT_MIN_SAVINGS_PER_DETOUR_MINUTE_CENTS,
 }: ShoppingOptimizerAppProps) {
   const [activeTab, setActiveTab] = useState<AppTab>("compare");
   const [zipCode, setZipCode] = useState(initialZipCode);
@@ -135,6 +175,23 @@ export function ShoppingOptimizerApp({
   const [barcodeFeedback, setBarcodeFeedback] = useState<string | null>(null);
   const [inStoreMode, setInStoreMode] = useState<InStoreMode>("recommended");
 
+  // Paket 6: Umweg-Gewichtung und Gerichte
+  const [storeDetourMinutes, setStoreDetourMinutes] =
+    useState<Partial<Record<StoreId, number>>>(initialStoreDetourMinutes);
+  const [minSavingsPerDetourMinuteCents, setMinSavingsPerDetourMinuteCents] = useState(
+    initialMinSavingsPerDetourMinuteCents,
+  );
+  const [recipes, setRecipes] = useState<RecipeDefinition[]>(
+    () => initialRecipes ?? [...BUILTIN_RECIPES],
+  );
+  const [recipeServings, setRecipeServings] = useState(4);
+  const [recipeFeedback, setRecipeFeedback] = useState<string | null>(null);
+
+  // Paket 7: Stammprodukte und Kassenzettel-Gegencheck
+  const [favoriteCategoryIds, setFavoriteCategoryIds] = useState<string[]>(initialFavoriteCategoryIds);
+  const [reconciliationState, setReconciliationState] = useState<ReconciliationState | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+
   // Gespeicherte Einkaufslisten
   const [savedLists, setSavedLists] = useState<SavedShoppingList[]>(initialSavedLists);
   const [activeListId, setActiveListId] = useState<string | undefined>(undefined);
@@ -171,6 +228,10 @@ export function ShoppingOptimizerApp({
           customBasePrices,
           savedLists,
           receiptAliases,
+          storeDetourMinutes,
+          minSavingsPerDetourMinuteCents,
+          favoriteCategoryIds,
+          customRecipes: recipes.filter((recipe) => !recipe.isBuiltin),
         }),
       );
     } catch {
@@ -186,6 +247,10 @@ export function ShoppingOptimizerApp({
     customBasePrices,
     savedLists,
     receiptAliases,
+    storeDetourMinutes,
+    minSavingsPerDetourMinuteCents,
+    favoriteCategoryIds,
+    recipes,
   ]);
 
   const optimization = useMemo(
@@ -198,6 +263,8 @@ export function ShoppingOptimizerApp({
         secondStoreThresholdCents,
         offers,
         customBasePrices,
+        storeDetourMinutes,
+        minSavingsPerDetourMinuteCents,
       }),
     [
       basketItems,
@@ -207,8 +274,60 @@ export function ShoppingOptimizerApp({
       secondStoreThresholdCents,
       offers,
       customBasePrices,
+      storeDetourMinutes,
+      minSavingsPerDetourMinuteCents,
     ],
   );
+
+  const recipeScores = useMemo(
+    () =>
+      scoreRecipesForWeek({
+        recipes,
+        servings: recipeServings,
+        offers,
+        enabledStores,
+        enabledLoyaltyApps,
+        shoppingDate,
+        customBasePrices,
+      }),
+    [recipes, recipeServings, offers, enabledStores, enabledLoyaltyApps, shoppingDate, customBasePrices],
+  );
+
+  const favoriteSet = useMemo(() => new Set(favoriteCategoryIds), [favoriteCategoryIds]);
+  const favoriteSummary = useMemo(
+    () =>
+      evaluateFavoriteAlerts({
+        favoriteCategoryIds,
+        offers,
+        enabledStores,
+        enabledLoyaltyApps,
+        shoppingDate,
+        customBasePrices,
+      }),
+    [favoriteCategoryIds, offers, enabledStores, enabledLoyaltyApps, shoppingDate, customBasePrices],
+  );
+  const basketCategoryIds = useMemo(
+    () => new Set(basketItems.map((item) => item.categoryId)),
+    [basketItems],
+  );
+
+  const household = useHouseholdShare({
+    onListLoaded: (list) => {
+      setBasketItems(list.items);
+      setListNameInput(list.name);
+      setActiveListId(list.listId ?? undefined);
+      setCheckedKeys(applyCategoryChecks({}, Object.fromEntries(list.checkedCategoryIds.map((id) => [id, true]))));
+      setActiveTab(list.listId ? "instore" : "list");
+    },
+    onRemoteChecks: (checks) => setCheckedKeys((previous) => applyCategoryChecks(previous, checks)),
+  });
+  const isShareActive = household.shareStatus != null;
+
+  useEffect(() => {
+    if (!isShareActive) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 5000);
+    return () => window.clearInterval(timer);
+  }, [isShareActive]);
 
   const brochurePreview = useMemo(
     () =>
@@ -272,7 +391,125 @@ export function ShoppingOptimizerApp({
   };
 
   const toggleChecked = (key: string) => {
-    setCheckedKeys((prev) => ({ ...prev, [key]: !prev[key] }));
+    const categoryId = key.slice(key.indexOf(":") + 1);
+    const nextChecked = !checkedKeys[key];
+    setCheckedKeys((previous) => applyCategoryChecks(previous, { [categoryId]: nextChecked }));
+    household.pushCheckChange(categoryId, nextChecked);
+  };
+
+  const changeItemPreference = (categoryId: string, preference: ItemPreference) => {
+    setBasketItems((previous) =>
+      previous.map((item) =>
+        item.categoryId === categoryId
+          ? { ...item, preference: preference === "cheapest" ? undefined : preference }
+          : item,
+      ),
+    );
+  };
+
+  const changeDetourMinutes = (storeId: StoreId, minutes: number) => {
+    setStoreDetourMinutes((previous) => {
+      const next = { ...previous };
+      if (minutes > 0) next[storeId] = minutes;
+      else delete next[storeId];
+      return next;
+    });
+  };
+
+  const toggleFavorite = (categoryId: string) => {
+    const next = favoriteSet.has(categoryId)
+      ? favoriteCategoryIds.filter((id) => id !== categoryId)
+      : [...favoriteCategoryIds, categoryId];
+    setFavoriteCategoryIds(next);
+    void fetch("/api/v1/favorites", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categoryIds: next }),
+    }).catch(() => undefined);
+  };
+
+  const addFavoriteAlertsToBasket = () => {
+    setBasketItems((previous) => [
+      ...previous,
+      ...favoriteSummary.alerts
+        .filter((alert) => !previous.some((item) => item.categoryId === alert.categoryId))
+        .map((alert) => ({ categoryId: alert.categoryId, quantity: 1 })),
+    ]);
+  };
+
+  const downloadFavoritesReminder = () => {
+    const ics = buildFavoritesReminderIcs({
+      now: new Date(),
+      appUrl: `${window.location.origin}${window.location.pathname}`,
+    });
+    const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "einkaufswaechter-wochen-radar.ics";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const addRecipe = (recipe: RecipeDefinition) => {
+    setBasketItems((previous) => addRecipeToBasket(previous, recipe, recipeServings));
+    setRecipeFeedback(
+      `Zutaten für ${recipe.name} (${recipeServings} Portionen) stehen jetzt auf deiner Liste.`,
+    );
+  };
+
+  const saveBasketAsRecipe = async (name: string, servings: number) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setRecipeFeedback("Gib dem Gericht einen Namen.");
+      return;
+    }
+    const ingredients = basketItems.map(({ categoryId, quantity }) => ({ categoryId, quantity }));
+    if (ingredients.length === 0) {
+      setRecipeFeedback("Leg zuerst die Zutaten auf deine Einkaufsliste.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/v1/recipes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName, servings, ingredients }),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { recipes: RecipeDefinition[] };
+        setRecipes((previous) => [
+          ...data.recipes,
+          ...previous.filter((recipe) => recipe.id.startsWith("lokal-")),
+        ]);
+        setRecipeFeedback(`Gericht „${trimmedName}“ gespeichert.`);
+        return;
+      }
+    } catch {
+      // Ohne Server lokal speichern, siehe unten
+    }
+    setRecipes((previous) => [
+      ...previous,
+      {
+        id: `lokal-${Date.now()}`,
+        name: trimmedName,
+        servings,
+        prepMinutes: 30,
+        tags: [],
+        isBuiltin: false,
+        ingredients,
+      },
+    ]);
+    setRecipeFeedback(`Gericht „${trimmedName}“ auf diesem Gerät gespeichert.`);
+  };
+
+  const deleteRecipe = (recipeId: string) => {
+    const recipe = recipes.find((candidate) => candidate.id === recipeId);
+    setRecipes((previous) => previous.filter((candidate) => candidate.id !== recipeId));
+    if (recipe) setRecipeFeedback(`Gericht „${recipe.name}“ gelöscht.`);
+    if (!recipeId.startsWith("lokal-")) {
+      void fetch(`/api/v1/recipes?id=${encodeURIComponent(recipeId)}`, { method: "DELETE" }).catch(
+        () => undefined,
+      );
+    }
   };
 
   const startRoute = (mode: InStoreMode) => {
@@ -338,6 +575,38 @@ export function ShoppingOptimizerApp({
     }
 
     setIsImportingReceipt(true);
+
+    // Gegencheck: geplante (abgehakte) Artikel dieses Markts gegen den echten Bon
+    const plan = resolvePlan(optimization, inStoreMode);
+    const leg = plan?.legs.find((candidate) => candidate.storeId === storeId);
+    const storeItems = leg
+      ? leg.departments.flatMap((department) => department.items)
+      : (optimization.singleStoreRankings.find((ranking) => ranking.storeId === storeId)?.items ?? []);
+    const checkedStoreItems = storeItems.filter((item) => checkedKeys[`${item.storeId}:${item.categoryId}`]);
+    const plannedItems = checkedStoreItems.length > 0 ? checkedStoreItems : storeItems;
+    const assignedReceiptItems = receiptPreview.items.flatMap((item) => {
+      const categoryId = manualReceiptAssignments[item.aliasNormalized] || item.categoryId;
+      return categoryId && CATEGORY_MAP[categoryId] ? [{ ...item, categoryId }] : [];
+    });
+    setReconciliationState({
+      storeId,
+      result: reconcileReceiptWithBasket({
+        planned: plannedItems.map((item) => ({
+          categoryId: item.categoryId,
+          quantity: item.requestedQuantity,
+          plannedCents: item.checkoutCents,
+        })),
+        receipt: assignedReceiptItems.map((item) => ({
+          categoryId: item.categoryId,
+          quantity: item.quantity,
+          actualCents: item.effectivePriceCents * item.quantity,
+          isOffer: item.isOffer,
+        })),
+      }),
+      weighedCategoryIds: assignedReceiptItems
+        .filter((item) => item.isWeighedItem)
+        .map((item) => item.categoryId),
+    });
 
     // 1. Sofort im Client übernehmen, damit es auch offline in der PWA funktioniert
     let localBaseUpdates = 0;
@@ -564,15 +833,16 @@ export function ShoppingOptimizerApp({
     }
   };
 
-  const saveCurrentList = async (asNew: boolean) => {
+  /** Speichert die Liste; liefert die Server-ID oder null, wenn nur lokal gespeichert wurde */
+  const saveCurrentList = async (asNew: boolean): Promise<string | null> => {
     const trimmedName = listNameInput.trim();
     if (!trimmedName) {
       setListSaveFeedback("Gib der Liste einen Namen.");
-      return;
+      return null;
     }
     if (basketItems.length === 0) {
       setListSaveFeedback("Deine Einkaufsliste ist leer, es gibt nichts zu speichern.");
-      return;
+      return null;
     }
 
     const payload = {
@@ -599,7 +869,7 @@ export function ShoppingOptimizerApp({
         if (Array.isArray(data.lists)) setSavedLists(data.lists);
         if (data.list?.id) setActiveListId(data.list.id);
         setListSaveFeedback(`Liste „${trimmedName}“ gespeichert.`);
-        return;
+        return typeof data.list?.id === "string" ? data.list.id : null;
       }
     } catch {
       // Lokal speichern, siehe unten
@@ -618,6 +888,20 @@ export function ShoppingOptimizerApp({
     setSavedLists((prev) => [localEntry, ...prev.filter((list) => list.id !== fallbackId)]);
     setActiveListId(fallbackId);
     setListSaveFeedback(`Liste „${trimmedName}“ auf diesem Gerät gespeichert.`);
+    return null;
+  };
+
+  const shareCurrentList = async () => {
+    if (basketItems.length === 0) {
+      setListSaveFeedback("Deine Einkaufsliste ist leer, es gibt nichts zu teilen.");
+      return;
+    }
+    const listId = await saveCurrentList(false);
+    await household.createShare({
+      listId,
+      name: listNameInput.trim() || "Einkaufsliste",
+      items: basketItems.map(({ categoryId, quantity }) => ({ categoryId, quantity })),
+    });
   };
 
   const loadSavedList = (list: SavedShoppingList) => {
@@ -797,6 +1081,72 @@ export function ShoppingOptimizerApp({
     );
   };
 
+  const reconciliationUpdates = useMemo(() => {
+    if (!reconciliationState) return [];
+    const { storeId, result, weighedCategoryIds } = reconciliationState;
+    return result.lines.flatMap((line) => {
+      const category = CATEGORY_MAP[line.categoryId];
+      if (
+        !category ||
+        line.status !== "price_changed" ||
+        line.actualWasOffer ||
+        line.actualUnitCents == null ||
+        weighedCategoryIds.includes(line.categoryId)
+      ) {
+        return [];
+      }
+      const current = customBasePrices[line.categoryId]?.[storeId] ?? category.defaultBasePrices[storeId];
+      return current.priceCents === line.actualUnitCents
+        ? []
+        : [{ categoryId: line.categoryId, priceCents: line.actualUnitCents, productLabel: current.productLabel }];
+    });
+  }, [reconciliationState, customBasePrices]);
+
+  const reconciliationView: ReconciliationView | null = reconciliationState
+    ? {
+        storeName: STORE_MAP[reconciliationState.storeId].shortName,
+        result: reconciliationState.result,
+        pendingPriceUpdates: reconciliationUpdates.length,
+      }
+    : null;
+
+  const applyReconciledPrices = () => {
+    if (!reconciliationState || reconciliationUpdates.length === 0) return;
+    const { storeId } = reconciliationState;
+    setCustomBasePrices((previous) => {
+      const next = { ...previous };
+      for (const update of reconciliationUpdates) {
+        next[update.categoryId] = {
+          ...(next[update.categoryId] ?? {}),
+          [storeId]: { priceCents: update.priceCents, productLabel: update.productLabel },
+        };
+      }
+      return next;
+    });
+    for (const update of reconciliationUpdates) {
+      void fetch("/api/v1/base-prices", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, ...update }),
+      }).catch(() => undefined);
+    }
+    const count = reconciliationUpdates.length;
+    setReceiptFeedback(
+      `${count === 1 ? "Ein Normalpreis" : `${count} Normalpreise`} bei ${STORE_MAP[storeId].shortName} aktualisiert.`,
+    );
+  };
+
+  const renderFavoritesCard = (showEmptyStates: boolean) => (
+    <FavoriteAlertsCard
+      summary={favoriteSummary}
+      favoriteCount={favoriteCategoryIds.length}
+      basketCategoryIds={basketCategoryIds}
+      onAddAll={addFavoriteAlertsToBasket}
+      onDownloadReminder={downloadFavoritesReminder}
+      showEmptyStates={showEmptyStates}
+    />
+  );
+
   const isWeekendShopping = shoppingDate >= weekWindow.thursday;
   const busyFetching = isSyncingZip || isLiveScraping;
 
@@ -810,6 +1160,22 @@ export function ShoppingOptimizerApp({
       />
 
       <main className="mx-auto max-w-7xl px-4 pb-10 pt-8 sm:px-6 sm:pt-10 lg:px-10">
+        {household.shareNotice && (
+          <div
+            role="status"
+            className="mb-8 flex items-start justify-between gap-3 rounded-md border-2 border-route px-4 py-3 text-[15px]"
+          >
+            <span className="pt-2.5">{household.shareNotice}</span>
+            <button
+              type="button"
+              onClick={household.dismissShareNotice}
+              aria-label="Hinweis schließen"
+              className="flex size-11 flex-none items-center justify-center rounded text-xl hover:bg-panel"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {activeTab === "compare" && (
           <div className="grid items-start gap-10 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-12">
             <div className="min-w-0 lg:col-start-2 lg:row-start-1">
@@ -823,6 +1189,7 @@ export function ShoppingOptimizerApp({
                 onStartRoute={startRoute}
                 onLoadPreset={() => loadPreset(DEFAULT_PRESET_ID)}
                 onOpenList={() => setActiveTab("list")}
+                favoritesCard={renderFavoritesCard(false)}
               />
             </div>
             <div className="lg:col-start-1 lg:row-start-1">
@@ -841,6 +1208,10 @@ export function ShoppingOptimizerApp({
                 onToggleStore={toggleStore}
                 enabledLoyaltyApps={enabledLoyaltyApps}
                 onToggleLoyaltyApp={toggleLoyaltyApp}
+                storeDetourMinutes={storeDetourMinutes}
+                onDetourMinutesChange={changeDetourMinutes}
+                minSavingsPerDetourMinuteCents={minSavingsPerDetourMinuteCents}
+                onMinSavingsPerDetourMinuteChange={setMinSavingsPerDetourMinuteCents}
               />
             </div>
           </div>
@@ -854,6 +1225,21 @@ export function ShoppingOptimizerApp({
             onLoadPreset={loadPreset}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            onChangePreference={changeItemPreference}
+            favoriteIds={favoriteSet}
+            onToggleFavorite={toggleFavorite}
+            recipesPanel={
+              <RecipesPanel
+                scores={recipeScores}
+                servings={recipeServings}
+                onServingsChange={setRecipeServings}
+                onAddRecipe={addRecipe}
+                onDeleteRecipe={deleteRecipe}
+                canSaveBasket={basketItems.length > 0}
+                onSaveBasketAsRecipe={(name, servings) => void saveBasketAsRecipe(name, servings)}
+                feedback={recipeFeedback}
+              />
+            }
             savedListsPanel={
               <SavedListsPanel
                 savedLists={savedLists}
@@ -864,6 +1250,11 @@ export function ShoppingOptimizerApp({
                 onLoad={loadSavedList}
                 onDelete={(listId) => void deleteSavedList(listId)}
                 feedback={listSaveFeedback}
+                canShare={basketItems.length > 0}
+                onShare={() => void shareCurrentList()}
+                isSharing={household.isSharing}
+                shareLink={household.shareLink}
+                onStopSharing={household.stopSharing}
               />
             }
           />
@@ -885,11 +1276,14 @@ export function ShoppingOptimizerApp({
             }
             onResetBasePrice={(categoryId, storeId) => void resetBasePrice(categoryId, storeId)}
             priceEditFeedback={priceEditFeedback}
+            shareStatus={household.shareStatus}
+            now={clock}
           />
         )}
 
         {activeTab === "offers" && (
           <div className="flex flex-col gap-14">
+            {renderFavoritesCard(true)}
             <ZipOffersPanel
               zipCode={zipCode}
               onZipCodeChange={(value) => changeZipCode(value, false)}
@@ -924,6 +1318,8 @@ export function ShoppingOptimizerApp({
               isImporting={isImportingReceipt}
               onImport={() => void applyReceiptImport()}
               feedback={receiptFeedback}
+              reconciliation={reconciliationView}
+              onApplyReconciledPrices={applyReconciledPrices}
             />
             <OffersView
               offers={offers}

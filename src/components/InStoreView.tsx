@@ -12,9 +12,11 @@ import {
   type PriceHistorySummary,
 } from "@/lib/rules/price-intelligence";
 import type { CustomBasePricesMap } from "@/lib/services/base-prices";
+import { ITEM_PREFERENCE_LABELS } from "@/lib/rules/preferences";
 import { itemShortName } from "./format";
 import { type InStoreMode, type PlanLeg, resolvePlan } from "./plan";
 import { DealRatingBadge, PriceConfidenceBadge, ShrinkflationAlert } from "./PriceBadges";
+import type { ShareStatus } from "./useHouseholdShare";
 import { cn, InfoIcon, StorePlate, ToggleChip } from "./ui";
 
 interface InStoreViewProps {
@@ -30,7 +32,19 @@ interface InStoreViewProps {
   onAdjustBasePrice: (categoryId: string, storeId: StoreId, deltaCents: number) => void;
   onResetBasePrice: (categoryId: string, storeId: StoreId) => void;
   priceEditFeedback: string | null;
+  /** Abgleich-Status, wenn die Liste mit dem Haushalt geteilt ist */
+  shareStatus?: ShareStatus | null;
+  /** Aktuelle Uhrzeit für „zuletzt vor X Sek. abgeglichen“ */
+  now?: number;
 }
+
+const describeSyncAge = (syncedAt: number | null, now: number): string => {
+  if (syncedAt == null) return "wird abgeglichen";
+  const seconds = Math.max(0, Math.round((now - syncedAt) / 1000));
+  if (seconds < 5) return "gerade abgeglichen";
+  if (seconds < 60) return `zuletzt vor ${seconds} Sek. abgeglichen`;
+  return `zuletzt vor ${Math.round(seconds / 60)} Min. abgeglichen`;
+};
 
 /** Werkzeuge, um den Normalpreis einer Eigenmarke direkt am Regal zu korrigieren */
 interface BasePriceTools {
@@ -57,6 +71,8 @@ export const InStoreView = ({
   onAdjustBasePrice,
   onResetBasePrice,
   priceEditFeedback,
+  shareStatus,
+  now,
 }: InStoreViewProps) => {
   const plan = resolvePlan(optimization, mode);
   const priceTools: BasePriceTools = {
@@ -102,6 +118,17 @@ export const InStoreView = ({
           ))}
         </div>
       </fieldset>
+
+      {shareStatus && (
+        <p role="status" className="flex items-start gap-2.5 rounded-md border-2 border-route px-4 py-3 text-[15px]">
+          <span aria-hidden="true" className="mt-1.5 size-2.5 flex-none rounded-full bg-route" />
+          <span>
+            <strong>Gemeinsame Liste „{shareStatus.listName}“</strong>,{" "}
+            {describeSyncAge(shareStatus.syncedAt, now ?? shareStatus.syncedAt ?? 0)}.
+            {shareStatus.error && <span className="block text-muted">{shareStatus.error}</span>}
+          </span>
+        </p>
+      )}
 
       {priceEditFeedback && (
         <p role="status" className="rounded-md bg-panel px-4 py-3 text-[15px] font-bold">
@@ -314,6 +341,11 @@ const ChecklistItem = ({ item, checked, onToggle, priceTools }: ChecklistItemPro
           <span className="flex items-baseline justify-between gap-3">
             <span className={cn("font-bold", checked && "text-muted line-through")}>
               {item.requestedQuantity}× {itemShortName(item)}
+              {item.preference !== "cheapest" && (
+                <span className="ml-2 rounded border border-line-strong px-1.5 pt-0.5 align-middle text-xs font-bold">
+                  {ITEM_PREFERENCE_LABELS[item.preference]}
+                </span>
+              )}
             </span>
             <span className={cn("flex-none font-extrabold tabular-nums", checked && "text-muted")}>
               {formatEuroCents(item.checkoutCents)}
@@ -349,6 +381,12 @@ const ChecklistItem = ({ item, checked, onToggle, priceTools }: ChecklistItemPro
             <span className="mt-1.5 flex items-start gap-1.5 text-[13px]">
               <InfoIcon className="mt-px size-4 flex-none text-route" />
               {item.bulkPackHint}
+            </span>
+          )}
+          {item.stockUpHint && (
+            <span className="mt-1.5 flex items-start gap-1.5 text-[13px]">
+              <InfoIcon className="mt-px size-4 flex-none text-route" />
+              {item.stockUpHint}
             </span>
           )}
         </span>

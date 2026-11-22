@@ -124,6 +124,8 @@ export interface CategoryDefinition {
    * Fehlt er, leitet die Oberfläche ihn aus `name` ab.
    */
   shortName?: string;
+  /** Haltbarer Dauerbrenner (Kaffee, Pasta, Konserven, Drogerie): Vorratstipp bei starken Angeboten */
+  isPantryStaple?: boolean;
   subtitle: string;
   department: DepartmentId;
   unit: BaseUnit;
@@ -1719,6 +1721,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   // ============================================================================
   {
     id: "pasta_500g",
+    isPantryStaple: true,
     name: "Spaghetti / Pasta (Hartweizen)",
     shortName: "Pasta",
     subtitle: "500 g Packung",
@@ -1741,6 +1744,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "passierte_tomaten_500g",
+    isPantryStaple: true,
     name: "Passierte / Gehackte Tomaten",
     shortName: "Passierte Tomaten",
     subtitle: "500 g Packung / Dose",
@@ -1763,6 +1767,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "olivenoel_500ml",
+    isPantryStaple: true,
     name: "Natives Olivenöl extra",
     shortName: "Olivenöl",
     subtitle: "500 ml – 750 ml Flasche",
@@ -1789,6 +1794,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "reis_1kg",
+    isPantryStaple: true,
     name: "Basmati- / Jasmin- / Langkornreis",
     shortName: "Reis",
     subtitle: "1 kg Packung",
@@ -1811,6 +1817,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "haferflocken_500g",
+    isPantryStaple: true,
     name: "Haferflocken (zart / kernig)",
     shortName: "Haferflocken",
     subtitle: "500 g Packung",
@@ -1833,6 +1840,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "rapsoel_sonnenblumenoel_1l",
+    isPantryStaple: true,
     name: "Rapsöl / Sonnenblumenöl",
     subtitle: "1 Liter Flasche",
     department: "trocken",
@@ -1849,6 +1857,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "weizenmehl_1kg",
+    isPantryStaple: true,
     name: "Weizenmehl Type 405",
     shortName: "Weizenmehl",
     subtitle: "1 kg Packung",
@@ -1883,6 +1892,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "zucker_1kg",
+    isPantryStaple: true,
     name: "Feiner Kristallzucker / Raffinade",
     shortName: "Zucker",
     subtitle: "1 kg Packung",
@@ -1926,6 +1936,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "tomatenmark_200g",
+    isPantryStaple: true,
     name: "Tomatenmark 3-fach konzentriert",
     shortName: "Tomatenmark",
     subtitle: "200 g Tube",
@@ -2036,6 +2047,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "kokosmilch_400ml",
+    isPantryStaple: true,
     name: "Kokosmilch (Dose)",
     subtitle: "400 ml Dose",
     department: "trocken",
@@ -2049,6 +2061,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "kichererbsen_kidneybohnen_400g",
+    isPantryStaple: true,
     name: "Kidneybohnen / Kichererbsen (Dose)",
     subtitle: "400 g Dose",
     department: "trocken",
@@ -2101,6 +2114,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "thunfisch_dose_195g",
+    isPantryStaple: true,
     name: "Thunfischfilets (Dose)",
     subtitle: "195 g Dose",
     department: "trocken",
@@ -2549,6 +2563,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   // ============================================================================
   {
     id: "filterkaffee_500g",
+    isPantryStaple: true,
     name: "Röstkaffee / Filterkaffee gemahlen",
     shortName: "Kaffee",
     subtitle: "500 g Vakuumpackung",
@@ -2594,6 +2609,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "mineralwasser_6x15l",
+    isPantryStaple: true,
     name: "Mineralwasser (Sixpack)",
     shortName: "Mineralwasser",
     subtitle: "6 × 1,5 Liter",
@@ -2616,6 +2632,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "kaffeebohnen_1kg",
+    isPantryStaple: true,
     name: "Ganze Kaffeebohnen (Caffè Crema / Espresso)",
     shortName: "Kaffeebohnen",
     subtitle: "1 kg Packung",
@@ -2633,6 +2650,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "kaffeepads_100g",
+    isPantryStaple: true,
     name: "Kaffeepads (16–20 Pads)",
     subtitle: "100–140 g Packung",
     department: "getraenke",
@@ -2649,6 +2667,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "loeslicher_kaffee_200g",
+    isPantryStaple: true,
     name: "Löslicher Kaffee / Instant-Kaffee",
     subtitle: "200 g Glas",
     department: "getraenke",
@@ -2665,6 +2684,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "teebeutel_packung_50g",
+    isPantryStaple: true,
     name: "Teebeutel (Früchte / Kräuter / Schwarztee)",
     subtitle: "20–25 Beutel (ca. 50 g)",
     department: "getraenke",
@@ -2825,6 +2845,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   // ============================================================================
   {
     id: "toilettenpapier_8st",
+    isPantryStaple: true,
     name: "Toilettenpapier 3-/4-lagig",
     shortName: "Toilettenpapier",
     subtitle: "8–10 Rollen Packung",
@@ -2847,6 +2868,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "kuechentuecher_4st",
+    isPantryStaple: true,
     name: "Küchentücher / Haushaltsrollen",
     subtitle: "4 Rollen Packung",
     department: "haushalt",
@@ -2863,6 +2885,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "taschentuecher_30st",
+    isPantryStaple: true,
     name: "Papiertaschentücher (30er / Box)",
     shortName: "Taschentücher",
     subtitle: "30×10 Stück Packung",
@@ -2880,6 +2903,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "spuelmittel_500ml",
+    isPantryStaple: true,
     name: "Geschirrspülmittel (Handspülmittel)",
     shortName: "Spülmittel",
     subtitle: "500 ml Flasche",
@@ -2894,6 +2918,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "spuelmaschinentabs_40st",
+    isPantryStaple: true,
     name: "Spülmaschinentabs (All-in-1)",
     subtitle: "40 Stück Packung",
     department: "haushalt",
@@ -2910,6 +2935,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "vollwaschmittel_20wl",
+    isPantryStaple: true,
     name: "Voll- / Colorwaschmittel (20 WL)",
     shortName: "Waschmittel",
     subtitle: "20 Waschladungen (1,1–1,5 L)",
@@ -2958,6 +2984,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "muellbeutel_20st",
+    isPantryStaple: true,
     name: "Müllbeutel mit Zugband (25–35 L)",
     shortName: "Müllbeutel",
     subtitle: "20 Stück Rolle",
@@ -2991,6 +3018,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "duschgel_300ml",
+    isPantryStaple: true,
     name: "Duschgel / Cremedusche",
     subtitle: "250–300 ml Flasche",
     department: "haushalt",
@@ -3039,6 +3067,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
   },
   {
     id: "zahnpasta_125ml",
+    isPantryStaple: true,
     name: "Zahnpasta / Zahncreme",
     subtitle: "75–125 ml Tube",
     department: "haushalt",
