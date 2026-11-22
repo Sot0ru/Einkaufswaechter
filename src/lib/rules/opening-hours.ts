@@ -41,8 +41,10 @@ const STATE_NAMES: Record<GermanStateCode, string> = {
 };
 
 /**
- * Ordnet eine 5-stellige deutsche PLZ dem passenden Bundesland zu
+ * Ordnet eine 5-stellige deutsche PLZ näherungsweise dem Bundesland zu
  * (für bundeslandspezifische Feiertage wie Fronleichnam, Allerheiligen, Reformationstag).
+ * Hinweis: PLZ-Präfix-Näherung – einzelne 2-/3-stellige Bereiche können über Landesgrenzen
+ * gehen (z. B. 63xxx rund um Aschaffenburg = Bayern statt Hessen).
  */
 export const resolveGermanStateForZip = (zipCode: string): GermanStateInfo => {
   const clean = zipCode.replace(/\D/g, "").slice(0, 5);
@@ -50,14 +52,17 @@ export const resolveGermanStateForZip = (zipCode: string): GermanStateInfo => {
   const p3 = Number.parseInt(clean.slice(0, 3), 10);
 
   let code: GermanStateCode = "BE";
-  if (p2 >= 1 && p2 <= 4) code = "SN";
+  if (p2 === 3) code = "BB"; // 03xxx: Cottbus / Lausitz (Brandenburg)
+  else if (p2 >= 1 && p2 <= 4) code = "SN";
   else if (p2 === 6) code = "ST";
   else if (p2 === 7) code = "TH";
   else if (p2 === 8 || p2 === 9) code = "SN";
   else if (p2 >= 10 && p2 <= 14) code = p2 <= 13 || p3 <= 141 ? "BE" : "BB";
   else if (p2 >= 15 && p2 <= 16) code = "BB";
   else if (p2 >= 17 && p2 <= 19) code = "MV";
-  else if (p2 >= 20 && p2 <= 22) code = p2 <= 21 || p3 <= 227 ? "HH" : "SH";
+  else if (p2 === 20) code = "HH";
+  else if (p2 === 21) code = p3 <= 211 ? "HH" : "NI"; // 212xx–217xx überwiegend Lüneburg/Stade (NI)
+  else if (p2 === 22) code = p3 <= 227 ? "HH" : "SH";
   else if (p2 >= 23 && p2 <= 25) code = "SH";
   else if (p2 >= 26 && p2 <= 27) code = "NI";
   else if (p2 === 28) code = p3 <= 287 ? "HB" : "NI";
@@ -68,7 +73,7 @@ export const resolveGermanStateForZip = (zipCode: string): GermanStateInfo => {
   else if (p2 === 38) code = p3 >= 388 ? "ST" : "NI";
   else if (p2 === 39) code = "ST";
   else if (p2 >= 40 && p2 <= 48) code = "NW";
-  else if (p2 === 49) code = "NI";
+  else if (p2 >= 49 && p2 <= 49) code = "NI";
   else if (p2 >= 50 && p2 <= 53) code = "NW";
   else if (p2 >= 54 && p2 <= 56) code = "RP";
   else if (p2 >= 57 && p2 <= 59) code = "NW";
@@ -272,7 +277,14 @@ export const parseOsmOpeningHoursSchedule = (
   let closedOnHolidays = true;
   let parsedAny = false;
 
-  for (const rawRule of text.split(";")) {
+  // Sowohl Semikolon- als auch Komma-getrennte Tagesgruppen unterstützen
+  // (z. B. "Mo-Fr 07:00-20:00; Sa 07:00-18:00" oder "Mo-Fr 07:00-20:00, Sa 07:00-18:00")
+  const normalizedRules = text.replace(
+    /(\d{1,2}:\d{2}|off|closed)\s*,\s*(?=(?:mo|tu|di|we|mi|th|do|fr|sa|su|so|ph)\b)/gi,
+    "$1; ",
+  );
+
+  for (const rawRule of normalizedRules.split(";")) {
     const rule = rawRule.trim();
     if (!rule) continue;
 
@@ -286,7 +298,7 @@ export const parseOsmOpeningHoursSchedule = (
       continue;
     }
 
-    // Beispiel: "Mo-Sa 07:00-21:00" oder "Su off" oder "Mo-Fr 07:00-20:00, Sa 07:00-18:00"
+    // Beispiel: "Mo-Sa 07:00-21:00", "Su off" oder "Mo-Fr 07:00-20:00; Sa 07:00-18:00"
     const match = rule.match(
       /^([A-Za-z,\-\s]+?)\s+(off|closed|\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}(?:\s*,\s*\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})*)$/i,
     );

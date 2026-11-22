@@ -150,7 +150,8 @@ export const InStoreView = ({
         )}
       >
         {plan.legs.map((leg) => {
-          const storeLocation = nearbyStores?.stores.find((loc) => loc.storeId === leg.storeId);
+          const candidate = nearbyStores?.stores.find((loc) => loc.storeId === leg.storeId);
+          const storeLocation = candidate?.source === "osm_overpass" ? candidate : undefined;
           return (
             <RouteChecklist
               key={`${leg.role}-${leg.storeId}`}

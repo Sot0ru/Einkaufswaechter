@@ -48,6 +48,8 @@ export const getNearbyStoresForZip = async (
           .map((row) => {
             const lat = Number.parseFloat(row.lat);
             const lon = Number.parseFloat(row.lon);
+            const rowSource: NearbyStoreLocation["source"] =
+              row.source === "osm_overpass" ? "osm_overpass" : "estimated_fallback";
             return {
               storeId: row.storeId as StoreId,
               storeName: row.storeName,
@@ -66,11 +68,13 @@ export const getNearbyStoresForZip = async (
                 Number.isFinite(lat) ? lat : center.lat,
                 Number.isFinite(lon) ? lon : center.lon,
               ),
-              source: "db_cache" as const,
+              source: rowSource,
               fetchedAt: row.fetchedAt.toISOString(),
             };
           })
           .sort((a, b) => a.distanceKm - b.distanceKm);
+
+        const osmMatchCount = stores.filter((s) => s.source === "osm_overpass").length;
 
         return {
           zipCode,
@@ -78,8 +82,9 @@ export const getNearbyStoresForZip = async (
           stateName: state.name,
           centerLat: center.lat,
           centerLon: center.lon,
-          osmMatchCount: cachedRows.filter((r) => r.source === "osm_overpass").length,
-          source: "db_cache",
+          osmMatchCount,
+          source: osmMatchCount > 0 ? "osm_overpass" : "estimated_fallback",
+          fromCache: true,
           stores,
         };
       }

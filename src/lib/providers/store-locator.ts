@@ -21,7 +21,7 @@ export interface NearbyStoreLocation {
   detourMinutes: number;
   openingHours: string;
   mapsUrl: string;
-  source: "osm_overpass" | "db_cache" | "estimated_fallback";
+  source: "osm_overpass" | "estimated_fallback";
   fetchedAt: string;
 }
 
@@ -32,7 +32,9 @@ export interface NearbyStoresResult {
   centerLat: number;
   centerLon: number;
   osmMatchCount: number;
-  source: "osm_overpass" | "db_cache" | "estimated_fallback";
+  source: "osm_overpass" | "estimated_fallback";
+  /** Zeigt an, ob das Ergebnis aus dem 7-Tage-Datenbank-Cache geliefert wurde */
+  fromCache?: boolean;
   stores: NearbyStoreLocation[];
 }
 

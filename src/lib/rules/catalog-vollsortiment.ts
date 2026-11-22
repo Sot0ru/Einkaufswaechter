@@ -2571,7 +2571,7 @@ export const CATEGORY_SEARCH_SYNONYMS: Readonly<Record<string, readonly string[]
   mayonnaise_remoulade_500ml: ["thomy", "miracel whip", "bruckmann", "mayo"],
   pesto_190g: ["barilla pesto", "bertolli", "genovese", "rosso"],
   gemuesebruehe_pulver_200g: ["maggi", "knorr", "brühwürfel"],
-  tk_pizza_1st: ["ristorante", "dr. oetker", "wagner", "gustavo gusto", "ofenfriesche", "tradizionale"],
+  tk_pizza_1st: ["ristorante", "dr. oetker", "wagner", "gustavo gusto", "ofenfrische", "tradizionale"],
   tk_fischstaebchen_450g: ["iglo", "käpt'n iglo", "frosta"],
   filterkaffee_500g: ["dallmayr", "jacobs", "melitta", "tchibo", "eduscho", "krönung", "prodomo"],
   kaffeebohnen_1kg: ["lavazza", "melitta bella crema", "tchibo barista", "segafredo", "mövenpick"],

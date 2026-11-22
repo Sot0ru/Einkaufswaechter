@@ -80,7 +80,9 @@ export const SettingsPanel = ({
   const stateInfo = resolveGermanStateForZip(region.zipCode);
   const holidayName = getGermanHolidayForDate(shoppingDate, stateInfo.code);
   const storeLocationById = new Map<StoreId, NearbyStoreLocation>(
-    (nearbyStores?.stores ?? []).map((loc) => [loc.storeId, loc]),
+    (nearbyStores?.stores ?? [])
+      .filter((loc) => loc.source === "osm_overpass")
+      .map((loc) => [loc.storeId, loc]),
   );
 
   return (
@@ -208,13 +210,13 @@ export const SettingsPanel = ({
             Wie viele Minuten Umweg bedeutet ein Markt für dich? Ein Abstecher kommt nur dazu, wenn
             er pro Minute genug spart.
           </p>
-          {onApplyNearbyDetours && nearbyStores && nearbyStores.stores.length > 0 && (
+          {onApplyNearbyDetours && nearbyStores && nearbyStores.osmMatchCount > 0 && (
             <button
               type="button"
               onClick={onApplyNearbyDetours}
               className="mt-2.5 text-left text-xs font-bold text-route underline underline-offset-4"
             >
-              Ermittelte Wegzeiten für alle Märkte als Umweg übernehmen
+              Ermittelte OSM-Wegzeiten als Umweg übernehmen
             </button>
           )}
           <div className="mt-3 flex flex-col gap-2.5">

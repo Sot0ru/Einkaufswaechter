@@ -214,11 +214,11 @@ export const CompareView = ({
         }
       />
 
-      {nearbyStores && nearbyStores.stores.length > 0 && (
+      {nearbyStores && nearbyStores.osmMatchCount > 0 && (
         <section aria-label="Nächste Filialen und Öffnungszeiten" className="grid gap-3 sm:grid-cols-2">
           {plan.legs.map((leg) => {
             const loc = locationByStore.get(leg.storeId);
-            if (!loc) return null;
+            if (!loc || loc.source !== "osm_overpass") return null;
             const opening = evaluateOpeningHours({
               openingHours: loc.openingHours,
               dateIso: shoppingDate,
@@ -246,9 +246,6 @@ export const CompareView = ({
                   <p className="mt-0.5 text-muted">{loc.address}</p>
                   <p className={cn("mt-1 font-bold", isClosedOrHoliday ? "text-ink" : "text-route")}>
                     {opening.label}
-                    {loc.source === "estimated_fallback" && (
-                      <span className="ml-1.5 font-normal text-muted">(Richtwert)</span>
-                    )}
                   </p>
                 </div>
                 <a

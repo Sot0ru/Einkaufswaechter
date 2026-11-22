@@ -11,7 +11,6 @@ import {
   type ReceiptAliasEntry,
 } from "@/lib/providers/receipt-importer";
 import {
-  buildFallbackStoreLocationsForZip,
   fetchNearbyStoresForZip,
   type NearbyStoresResult,
 } from "@/lib/providers/store-locator";
@@ -29,7 +28,6 @@ import {
   type StoreId,
 } from "@/lib/rules/catalog";
 import { buildFavoritesReminderIcs, evaluateFavoriteAlerts } from "@/lib/rules/favorites";
-import { resolveGermanStateForZip } from "@/lib/rules/opening-hours";
 import {
   type BasketItemInput,
   DEFAULT_MIN_SAVINGS_PER_DETOUR_MINUTE_CENTS,
@@ -88,21 +86,6 @@ export interface ShoppingOptimizerAppProps {
   initialStoreDetourMinutes?: Partial<Record<StoreId, number>>;
   initialMinSavingsPerDetourMinuteCents?: number;
 }
-
-const buildInitialNearbyStores = (zipCode: string): NearbyStoresResult => {
-  const state = resolveGermanStateForZip(zipCode);
-  const center = { lat: 52.52, lon: 13.4, city: `PLZ ${zipCode}` };
-  return {
-    zipCode,
-    stateCode: state.code,
-    stateName: state.name,
-    centerLat: center.lat,
-    centerLon: center.lon,
-    osmMatchCount: 0,
-    source: "estimated_fallback",
-    stores: buildFallbackStoreLocationsForZip(zipCode, center),
-  };
-};
 
 /** Abgehakt-Status gilt pro Kategorie, egal in welchem Markt sie auf der Route liegt */
 const applyCategoryChecks = (
@@ -199,10 +182,8 @@ export function ShoppingOptimizerApp({
   const [barcodeFeedback, setBarcodeFeedback] = useState<string | null>(null);
   const [inStoreMode, setInStoreMode] = useState<InStoreMode>("recommended");
 
-  // Paket 9: Echte Filial-Entfernungen & Öffnungszeiten (OSM / Overpass)
-  const [nearbyStores, setNearbyStores] = useState<NearbyStoresResult>(() =>
-    buildInitialNearbyStores(initialZipCode),
-  );
+  // Paket 9: Echte Filial-Entfernungen & Öffnungszeiten (nur nach explizitem Abruf)
+  const [nearbyStores, setNearbyStores] = useState<NearbyStoresResult | null>(null);
   const [isLoadingNearbyStores, setIsLoadingNearbyStores] = useState(false);
   const [nearbyStoresFeedback, setNearbyStoresFeedback] = useState<string | null>(null);
 
@@ -424,8 +405,12 @@ export function ShoppingOptimizerApp({
   };
 
   const toggleChecked = (key: string) => {
-    const categoryId = key.slice(key.indexOf(":") + 1);
     const nextChecked = !checkedKeys[key];
+    if (key.startsWith("custom:")) {
+      setCheckedKeys((previous) => ({ ...previous, [key]: nextChecked }));
+      return;
+    }
+    const categoryId = key.slice(key.indexOf(":") + 1);
     setCheckedKeys((previous) => applyCategoryChecks(previous, { [categoryId]: nextChecked }));
     household.pushCheckChange(categoryId, nextChecked);
   };
@@ -780,6 +765,10 @@ export function ShoppingOptimizerApp({
     }
 
     setZipCode(candidateZip);
+    if (candidateZip !== activeZipCode) {
+      setNearbyStores(null);
+      setNearbyStoresFeedback(null);
+    }
     setActiveZipCode(candidateZip);
     const region = resolveZipRegion(candidateZip);
     const regionText = `${region.regionLabel}, ${region.aldiVariant}`;
@@ -847,6 +836,10 @@ export function ShoppingOptimizerApp({
         }
         if (Array.isArray(data.chainStatuses)) {
           setChainScrapeStatuses(data.chainStatuses);
+        }
+        if (candidateZip !== activeZipCode) {
+          setNearbyStores(null);
+          setNearbyStoresFeedback(null);
         }
         setActiveZipCode(candidateZip);
         setZipSyncFeedback(
@@ -1211,11 +1204,14 @@ export function ShoppingOptimizerApp({
   };
 
   const applyNearbyDetoursFromResult = (result: NearbyStoresResult) => {
-    const nextDetours: Partial<Record<StoreId, number>> = {};
+    const osmDetours: Partial<Record<StoreId, number>> = {};
     for (const loc of result.stores) {
-      nextDetours[loc.storeId] = loc.detourMinutes;
+      if (loc.source === "osm_overpass") {
+        osmDetours[loc.storeId] = loc.detourMinutes;
+      }
     }
-    setStoreDetourMinutes(nextDetours);
+    if (Object.keys(osmDetours).length === 0) return;
+    setStoreDetourMinutes((previous) => ({ ...previous, ...osmDetours }));
   };
 
   const fetchNearbyStores = async () => {
@@ -1236,13 +1232,18 @@ export function ShoppingOptimizerApp({
         if (response.ok) {
           const data = (await response.json()) as NearbyStoresResult;
           if (Array.isArray(data.stores) && data.stores.length > 0) {
-            setNearbyStores(data);
-            applyNearbyDetoursFromResult(data);
-            setNearbyStoresFeedback(
-              data.osmMatchCount > 0
-                ? `${data.osmMatchCount} echte Filialen via OpenStreetMap für PLZ ${candidateZip} geladen & Umwege übernommen.`
-                : `Richtwerte für PLZ ${candidateZip} geladen (OpenStreetMap derzeit nicht erreichbar).`,
-            );
+            if (data.osmMatchCount > 0) {
+              setNearbyStores(data);
+              applyNearbyDetoursFromResult(data);
+              setNearbyStoresFeedback(
+                `${data.osmMatchCount} echte Filialen via OpenStreetMap für PLZ ${candidateZip} geladen${data.fromCache ? " (Cache)" : ""} & Wegzeiten übernommen.`,
+              );
+            } else {
+              setNearbyStores(null);
+              setNearbyStoresFeedback(
+                `Keine echten Filialen über OpenStreetMap für PLZ ${candidateZip} erreichbar. Deine Umweg-Eingaben bleiben unverändert.`,
+              );
+            }
             return;
           }
         }
@@ -1251,13 +1252,18 @@ export function ShoppingOptimizerApp({
       }
 
       const directResult = await fetchNearbyStoresForZip(candidateZip);
-      setNearbyStores(directResult);
-      applyNearbyDetoursFromResult(directResult);
-      setNearbyStoresFeedback(
-        directResult.osmMatchCount > 0
-          ? `${directResult.osmMatchCount} echte Filialen direkt via OpenStreetMap für PLZ ${candidateZip} geladen & Umwege übernommen.`
-          : `Richtwerte für PLZ ${candidateZip} aktiv (offline / OSM nicht erreichbar).`,
-      );
+      if (directResult.osmMatchCount > 0) {
+        setNearbyStores(directResult);
+        applyNearbyDetoursFromResult(directResult);
+        setNearbyStoresFeedback(
+          `${directResult.osmMatchCount} echte Filialen direkt via OpenStreetMap für PLZ ${candidateZip} geladen & Wegzeiten übernommen.`,
+        );
+      } else {
+        setNearbyStores(null);
+        setNearbyStoresFeedback(
+          `OpenStreetMap derzeit nicht erreichbar (offline). Deine Umweg-Eingaben bleiben unverändert.`,
+        );
+      }
     } finally {
       setIsLoadingNearbyStores(false);
     }
@@ -1336,8 +1342,9 @@ export function ShoppingOptimizerApp({
                 nearbyStoresFeedback={nearbyStoresFeedback}
                 onFetchNearbyStores={() => void fetchNearbyStores()}
                 onApplyNearbyDetours={() => {
+                  if (!nearbyStores) return;
                   applyNearbyDetoursFromResult(nearbyStores);
-                  setNearbyStoresFeedback("Ermittelte Wegzeiten als Umwege übernommen.");
+                  setNearbyStoresFeedback("Ermittelte OSM-Wegzeiten als Umwege übernommen.");
                 }}
               />
             </div>

@@ -23,6 +23,9 @@ describe("Filialfinder, Entfernungen, Öffnungszeiten & Feiertage (Ausbaustufe 4
     expect(resolveGermanStateForZip("80331").code).toBe("BY");
     expect(resolveGermanStateForZip("50667").code).toBe("NW");
     expect(resolveGermanStateForZip("20095").code).toBe("HH");
+    expect(resolveGermanStateForZip("21073").code).toBe("HH"); // Hamburg-Harburg
+    expect(resolveGermanStateForZip("21335").code).toBe("NI"); // Lüneburg (Niedersachsen)
+    expect(resolveGermanStateForZip("03046").code).toBe("BB"); // Cottbus (Brandenburg)
     expect(resolveGermanStateForZip("01067").code).toBe("SN");
 
     // Bundesweit
@@ -41,12 +44,13 @@ describe("Filialfinder, Entfernungen, Öffnungszeiten & Feiertage (Ausbaustufe 4
     expect(getGermanHolidayForDate("2026-11-01", "BY")).toBe("Allerheiligen");
     expect(getGermanHolidayForDate("2026-11-01", "HH")).toBeNull();
 
-    // Regional: Buß- und Bettag 2026 = 18.11. (nur Sachsen)
+    // Regional: Buß- und Bettag 2026 = 18.11. (nur Sachsen, NICHT Cottbus/Brandenburg!)
     expect(getGermanHolidayForDate("2026-11-18", "SN")).toBe("Buß- und Bettag");
+    expect(getGermanHolidayForDate("2026-11-18", "BB")).toBeNull();
     expect(getGermanHolidayForDate("2026-11-18", "BE")).toBeNull();
   });
 
-  it("wertet OSM opening_hours korrekt für offene Märkte, baldigen Ladenschluss, Sonntag und Feiertage aus", () => {
+  it("wertet OSM opening_hours korrekt für offene Märkte, Komma-Regeln, Ladenschluss, Sonntag und Feiertage aus", () => {
     const hours = "Mo-Fr 07:00-21:00; Sa 07:00-20:00; PH off";
 
     // Mittwoch 14:00 -> Offen bis 21:00
@@ -58,6 +62,16 @@ describe("Filialfinder, Entfernungen, Öffnungszeiten & Feiertage (Ausbaustufe 4
         currentTimeMinutes: 14 * 60,
       }),
     ).toMatchObject({ state: "open", label: "Offen bis 21:00" });
+
+    // Komma-getrennte Tagesgruppen funktionieren ebenfalls
+    expect(
+      evaluateOpeningHours({
+        openingHours: "Mo-Fr 07:00-20:00, Sa 07:00-18:00",
+        dateIso: "2026-11-21",
+        stateCode: "BE",
+        currentTimeMinutes: 16 * 60,
+      }),
+    ).toMatchObject({ state: "open", label: "Offen bis 18:00" });
 
     // Samstag 19:35 -> Schließt in 25 Min. (20:00)
     expect(
@@ -147,7 +161,7 @@ describe("Filialfinder, Entfernungen, Öffnungszeiten & Feiertage (Ausbaustufe 4
     expect(haversineDistanceKm(52.5326, 13.3847, 52.535, 13.388)).toBeLessThan(0.5);
   });
 
-  it("cacht abgerufene OSM-Filialen für 7 Tage in PGlite und liefert bei Folgeabruf db_cache ohne Netzwerkaufruf", async () => {
+  it("cacht abgerufene OSM-Filialen für 7 Tage in PGlite und trennt echte OSM-Treffer sauber von Fallback-Werten", async () => {
     const db = await getDb();
     let fetchCount = 0;
 
@@ -190,11 +204,17 @@ describe("Filialfinder, Entfernungen, Öffnungszeiten & Feiertage (Ausbaustufe 4
     const callsAfterFirst = fetchCount;
     expect(callsAfterFirst).toBeGreaterThanOrEqual(1);
 
-    // Zweiter Aufruf bedient sich direkt aus dem 7-Tage PGlite-Cache
+    // Zweiter Aufruf bedient sich direkt aus dem 7-Tage PGlite-Cache, bewahrt aber pro Filiale echte Quelle!
     const second = await getNearbyStoresForZip(db, "80331", { fetchImpl: mockFetch });
-    expect(second.source).toBe("db_cache");
+    expect(second.fromCache).toBe(true);
+    expect(second.source).toBe("osm_overpass");
+    expect(second.osmMatchCount).toBe(1);
     expect(fetchCount).toBe(callsAfterFirst);
-    expect(second.stores.find((s) => s.storeId === "aldi")?.branchName).toBe("ALDI SÜD Marienplatz");
+    expect(second.stores.find((s) => s.storeId === "aldi")).toMatchObject({
+      branchName: "ALDI SÜD Marienplatz",
+      source: "osm_overpass",
+    });
+    expect(second.stores.find((s) => s.storeId === "rewe")?.source).toBe("estimated_fallback");
 
     // Offline-Fallback liefert immer alle 7 Ketten
     const offline = await fetchNearbyStoresForZip("10115", { offlineOnly: true });

@@ -10,7 +10,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const zipCode = (searchParams.get("zipCode") ?? "10115").trim();
     const dateParam = searchParams.get("date");
-    const forceRefresh = searchParams.get("refresh") === "true";
 
     if (!isValidGermanZip(zipCode)) {
       return NextResponse.json(
@@ -20,7 +19,7 @@ export async function GET(request: Request) {
     }
 
     const db = await getDb();
-    const result = await getNearbyStoresForZip(db, zipCode, { forceRefresh });
+    const result = await getNearbyStoresForZip(db, zipCode);
     const state = resolveGermanStateForZip(zipCode);
     const holidayName =
       dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
