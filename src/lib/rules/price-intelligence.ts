@@ -9,7 +9,7 @@ export interface PriceHistorySample {
   packageAmount: number;
   packageUnit: BaseUnit;
   observedDate: string; // YYYY-MM-DD
-  source: "weekly_offer" | "receipt" | "barcode";
+  source: "weekly_offer" | "receipt" | "barcode" | "open_prices";
   isOffer: boolean;
 }
 
@@ -29,7 +29,7 @@ export interface VerifiedPriceRecord {
   storeId: StoreId;
   priceCents: number;
   observedDate: string; // YYYY-MM-DD
-  source: "receipt" | "barcode";
+  source: "receipt" | "barcode" | "open_prices";
   packageAmount: number | null;
   packageUnit: BaseUnit | null;
 }
@@ -64,6 +64,7 @@ export interface DealAssessment {
 
 export type PriceConfidenceSource =
   | "live_scraped"
+  | "open_prices"
   | "receipt_verified"
   | "user_calibrated"
   | "regional_offer"
@@ -374,6 +375,17 @@ export const assessOfferConfidence = (
       daysAgo: 0,
     };
   }
+  if (offer.id.startsWith("openprices-")) {
+    const rel = verifiedRecord
+      ? formatRelativeDaysDe(verifiedRecord.observedDate, referenceDate)
+      : formatRelativeDaysDe(offer.validFrom, referenceDate);
+    return {
+      source: "open_prices",
+      level: rel.daysAgo != null && rel.daysAgo <= 30 ? "high" : "medium",
+      label: rel.text ? `Open Prices (${rel.text})` : "Open Prices (Community)",
+      daysAgo: rel.daysAgo,
+    };
+  }
   if (offer.id.startsWith("receipt-") || offer.id.startsWith("barcode-")) {
     const rel = formatRelativeDaysDe(offer.validFrom, referenceDate);
     return {
@@ -385,6 +397,14 @@ export const assessOfferConfidence = (
   }
   if (verifiedRecord) {
     const rel = formatRelativeDaysDe(verifiedRecord.observedDate, referenceDate);
+    if (verifiedRecord.source === "open_prices" && rel.daysAgo != null && rel.daysAgo <= 30) {
+      return {
+        source: "open_prices",
+        level: "high",
+        label: rel.text ? `Open Prices (${rel.text})` : "Open Prices",
+        daysAgo: rel.daysAgo,
+      };
+    }
     if (rel.daysAgo != null && rel.daysAgo <= 14) {
       return {
         source: "receipt_verified",
@@ -431,6 +451,14 @@ export const assessResolvedItemConfidence = (params: {
 
   if (verifiedRecord) {
     const rel = formatRelativeDaysDe(verifiedRecord.observedDate, referenceDate);
+    if (verifiedRecord.source === "open_prices") {
+      return {
+        source: "open_prices",
+        level: rel.daysAgo != null && rel.daysAgo <= 30 ? "high" : "medium",
+        label: rel.text ? `Open Prices (${rel.text})` : "Open Prices (Community)",
+        daysAgo: rel.daysAgo,
+      };
+    }
     return {
       source: "receipt_verified",
       level: rel.daysAgo != null && rel.daysAgo <= 30 ? "high" : "medium",

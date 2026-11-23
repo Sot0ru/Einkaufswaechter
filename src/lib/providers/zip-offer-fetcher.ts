@@ -7,6 +7,7 @@ import {
   getWeekWindowForDate,
   type RawDemoOfferSeed,
 } from "./demo-offers";
+import { parseStructuredCsvProductFeed } from "./product-feed-parser";
 
 export type ZipRegionCode = "ost" | "nord" | "west" | "suedwest" | "sued";
 
@@ -463,15 +464,31 @@ export const fetchAndMatchOffersForZip = async (
       url.searchParams.set("zip", region.zipCode);
       url.searchParams.set("date", options.referenceDate);
       const response = await fetchFn(url.toString(), {
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json, text/csv, text/tab-separated-values, text/plain" },
       });
       if (response.ok) {
-        const json = await response.json();
-        const rawList = Array.isArray(json) ? json : json?.offers;
-        const parsed = z.array(ExternalRawOfferSchema).safeParse(rawList);
-        if (parsed.success && parsed.data.length > 0) {
-          rawCandidates = parsed.data;
-          source = "remote_feed";
+        const contentType = (response.headers?.get?.("content-type") ?? "").toLowerCase();
+        const isExplicitCsv =
+          contentType.includes("csv") ||
+          contentType.includes("tab-separated") ||
+          configuredFeedUrl.toLowerCase().endsWith(".csv") ||
+          configuredFeedUrl.toLowerCase().endsWith(".tsv");
+
+        if (isExplicitCsv && typeof response.text === "function") {
+          const rawCsv = await response.text();
+          const csvParsed = parseStructuredCsvProductFeed(rawCsv);
+          if (csvParsed.parsedOffers.length > 0) {
+            rawCandidates = csvParsed.parsedOffers;
+            source = "remote_feed";
+          }
+        } else {
+          const json = await response.json();
+          const rawList = Array.isArray(json) ? json : json?.offers;
+          const parsed = z.array(ExternalRawOfferSchema).safeParse(rawList);
+          if (parsed.success && parsed.data.length > 0) {
+            rawCandidates = parsed.data;
+            source = "remote_feed";
+          }
         }
       }
     } catch {

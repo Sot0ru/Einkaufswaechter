@@ -128,16 +128,18 @@ export const OffersView = ({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-extrabold">PDF-, HTML- oder Text-Prospekt ablegen</p>
+              <p className="text-sm font-extrabold">
+                PDF-, HTML-, CSV-/TSV-Produktfeed oder Text ablegen
+              </p>
               <p className="text-xs text-muted">
-                Wird vollständig lokal im Browser ausgelesen – kein Upload nötig
+                Wird vollständig lokal im Browser ausgelesen (auch Awin-/Händler-CSV-Feeds)
               </p>
             </div>
             <label className={cn(SECONDARY_BUTTON, "cursor-pointer")}>
               Datei wählen
               <input
                 type="file"
-                accept=".pdf,.html,.htm,.txt"
+                accept=".pdf,.html,.htm,.csv,.tsv,.txt"
                 onChange={handleFileInput}
                 className="sr-only"
               />
