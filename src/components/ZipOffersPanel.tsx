@@ -13,8 +13,10 @@ interface ZipOffersPanelProps {
   activeZipCode: string;
   region: ZipRegionInfo;
   onFetchOffers: (zipCode?: string) => void;
+  onFetchOpenPrices: () => void;
   onLiveScrape: () => void;
   isSyncing: boolean;
+  isFetchingOpenPrices: boolean;
   isLiveScraping: boolean;
   feedback: string | null;
   chainStatuses: readonly ChainScrapeStatus[];
@@ -32,22 +34,26 @@ export const ZipOffersPanel = ({
   activeZipCode,
   region,
   onFetchOffers,
+  onFetchOpenPrices,
   onLiveScrape,
   isSyncing,
+  isFetchingOpenPrices,
   isLiveScraping,
   feedback,
   chainStatuses,
 }: ZipOffersPanelProps) => {
-  const busy = isSyncing || isLiveScraping;
+  const busy = isSyncing || isLiveScraping || isFetchingOpenPrices;
 
   return (
     <section aria-labelledby="zip-offers-title">
       <h1 id="zip-offers-title" className="text-[26px] leading-tight font-black tracking-tight">
-        Angebote für deine Postleitzahl
+        Angebote & echte Marktpreise für deine PLZ
       </h1>
       <p className="mt-2 max-w-[70ch] text-[15px]">
-        Aktuell PLZ {activeZipCode}: {region.regionLabel}, {region.aldiVariant}. Alle Angebote
-        werden den {CATEGORIES.length} Kategorien des Sortiments zugeordnet.
+        Aktuell PLZ {activeZipCode}: {region.regionLabel}, {region.aldiVariant}. Über{" "}
+        <strong>Open Prices</strong> (Open Food Facts, ODbL-1.0) rufst du echte, von der Community
+        gemeldete Supermarktpreise aus deiner Umgebung und ganz Deutschland direkt im Browser ab –
+        komplett ohne Bot-Schutz. Alle Treffer werden den {CATEGORIES.length} Kategorien zugeordnet.
       </p>
 
       <div className="mt-4 flex flex-wrap items-end gap-2.5">
@@ -70,6 +76,14 @@ export const ZipOffersPanel = ({
           className={cn(PRIMARY_BUTTON, "disabled:opacity-60")}
         >
           {isSyncing ? "Angebote werden abgerufen…" : "Angebote abrufen"}
+        </button>
+        <button
+          type="button"
+          onClick={onFetchOpenPrices}
+          disabled={busy}
+          className={cn(SECONDARY_BUTTON, "disabled:opacity-60")}
+        >
+          {isFetchingOpenPrices ? "Open Prices werden geladen…" : "Open Prices (Community) laden"}
         </button>
         <button
           type="button"
