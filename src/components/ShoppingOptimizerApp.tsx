@@ -10,6 +10,10 @@ import {
   parseReceiptText,
   type ReceiptAliasEntry,
 } from "@/lib/providers/receipt-importer";
+import {
+  fetchNearbyStoresForZip,
+  type NearbyStoresResult,
+} from "@/lib/providers/store-locator";
 import { parseBrochureText } from "@/lib/providers/text-importer";
 import {
   buildRegionalOffersForZip,
@@ -60,7 +64,7 @@ import type { ReconciliationView } from "./ReceiptReconciliation";
 import { RecipesPanel } from "./RecipesPanel";
 import { SavedListsPanel } from "./SavedListsPanel";
 import { SettingsPanel } from "./SettingsPanel";
-import { ShoppingListView } from "./ShoppingListView";
+import { type CustomBasketItem, ShoppingListView } from "./ShoppingListView";
 import { useHouseholdShare } from "./useHouseholdShare";
 import { ZipOffersPanel } from "./ZipOffersPanel";
 
@@ -74,6 +78,7 @@ export interface ShoppingOptimizerAppProps {
   initialReceiptAliases?: ReceiptAliasEntry[];
   initialPriceHistory?: PriceHistorySummary;
   initialBasketItems?: BasketItemInput[];
+  initialCustomItems?: CustomBasketItem[];
   initialZipCode?: string;
   initialCheckedKeys?: Record<string, boolean>;
   initialRecipes?: RecipeDefinition[];
@@ -117,6 +122,7 @@ export function ShoppingOptimizerApp({
   initialReceiptAliases = [],
   initialPriceHistory,
   initialBasketItems,
+  initialCustomItems = [],
   initialZipCode = "10115",
   initialCheckedKeys = {},
   initialRecipes,
@@ -143,6 +149,7 @@ export function ShoppingOptimizerApp({
   const [basketItems, setBasketItems] = useState<BasketItemInput[]>(
     initialBasketItems ?? [...SHOPPING_PRESETS[0].items],
   );
+  const [customItems, setCustomItems] = useState<CustomBasketItem[]>(initialCustomItems);
   const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>(initialCheckedKeys);
   const [searchQuery, setSearchQuery] = useState("");
   const [offers, setOffers] = useState<OfferRecord[]>(initialOffers);
@@ -174,6 +181,11 @@ export function ShoppingOptimizerApp({
   const [priceEditFeedback, setPriceEditFeedback] = useState<string | null>(null);
   const [barcodeFeedback, setBarcodeFeedback] = useState<string | null>(null);
   const [inStoreMode, setInStoreMode] = useState<InStoreMode>("recommended");
+
+  // Paket 9: Echte Filial-Entfernungen & Öffnungszeiten (nur nach explizitem Abruf)
+  const [nearbyStores, setNearbyStores] = useState<NearbyStoresResult | null>(null);
+  const [isLoadingNearbyStores, setIsLoadingNearbyStores] = useState(false);
+  const [nearbyStoresFeedback, setNearbyStoresFeedback] = useState<string | null>(null);
 
   // Paket 6: Umweg-Gewichtung und Gerichte
   const [storeDetourMinutes, setStoreDetourMinutes] =
@@ -224,6 +236,7 @@ export function ShoppingOptimizerApp({
           enabledStores,
           enabledLoyaltyApps,
           basketItems,
+          customItems,
           checkedKeys,
           customBasePrices,
           savedLists,
@@ -243,6 +256,7 @@ export function ShoppingOptimizerApp({
     enabledStores,
     enabledLoyaltyApps,
     basketItems,
+    customItems,
     checkedKeys,
     customBasePrices,
     savedLists,
@@ -391,8 +405,12 @@ export function ShoppingOptimizerApp({
   };
 
   const toggleChecked = (key: string) => {
-    const categoryId = key.slice(key.indexOf(":") + 1);
     const nextChecked = !checkedKeys[key];
+    if (key.startsWith("custom:")) {
+      setCheckedKeys((previous) => ({ ...previous, [key]: nextChecked }));
+      return;
+    }
+    const categoryId = key.slice(key.indexOf(":") + 1);
     setCheckedKeys((previous) => applyCategoryChecks(previous, { [categoryId]: nextChecked }));
     household.pushCheckChange(categoryId, nextChecked);
   };
@@ -747,6 +765,10 @@ export function ShoppingOptimizerApp({
     }
 
     setZipCode(candidateZip);
+    if (candidateZip !== activeZipCode) {
+      setNearbyStores(null);
+      setNearbyStoresFeedback(null);
+    }
     setActiveZipCode(candidateZip);
     const region = resolveZipRegion(candidateZip);
     const regionText = `${region.regionLabel}, ${region.aldiVariant}`;
@@ -814,6 +836,10 @@ export function ShoppingOptimizerApp({
         }
         if (Array.isArray(data.chainStatuses)) {
           setChainScrapeStatuses(data.chainStatuses);
+        }
+        if (candidateZip !== activeZipCode) {
+          setNearbyStores(null);
+          setNearbyStoresFeedback(null);
         }
         setActiveZipCode(candidateZip);
         setZipSyncFeedback(
@@ -1147,15 +1173,112 @@ export function ShoppingOptimizerApp({
     />
   );
 
+  const addCustomItem = (item: Omit<CustomBasketItem, "id" | "quantity">) => {
+    const normalized = item.name.trim().toLowerCase();
+    setCustomItems((prev) => {
+      const existing = prev.find((c) => c.name.trim().toLowerCase() === normalized);
+      if (existing) {
+        return prev.map((c) => (c.id === existing.id ? { ...c, quantity: c.quantity + 1 } : c));
+      }
+      return [
+        ...prev,
+        {
+          id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name: item.name.trim(),
+          department: item.department,
+          quantity: 1,
+          estimatedPriceCents: item.estimatedPriceCents,
+        },
+      ];
+    });
+  };
+
+  const changeCustomItemQuantity = (id: string, delta: number) => {
+    setCustomItems((prev) => {
+      const target = prev.find((c) => c.id === id);
+      if (!target) return prev;
+      const nextQty = target.quantity + delta;
+      if (nextQty <= 0) return prev.filter((c) => c.id !== id);
+      return prev.map((c) => (c.id === id ? { ...c, quantity: nextQty } : c));
+    });
+  };
+
+  const applyNearbyDetoursFromResult = (result: NearbyStoresResult) => {
+    const osmDetours: Partial<Record<StoreId, number>> = {};
+    for (const loc of result.stores) {
+      if (loc.source === "osm_overpass") {
+        osmDetours[loc.storeId] = loc.detourMinutes;
+      }
+    }
+    if (Object.keys(osmDetours).length === 0) return;
+    setStoreDetourMinutes((previous) => ({ ...previous, ...osmDetours }));
+  };
+
+  const fetchNearbyStores = async () => {
+    const candidateZip = zipCode.trim();
+    if (!isValidGermanZip(candidateZip)) {
+      setNearbyStoresFeedback(INVALID_ZIP_MESSAGE);
+      return;
+    }
+
+    setIsLoadingNearbyStores(true);
+    setNearbyStoresFeedback(null);
+
+    try {
+      try {
+        const response = await fetch(
+          `/api/v1/stores/nearby?zipCode=${encodeURIComponent(candidateZip)}&date=${encodeURIComponent(shoppingDate)}`,
+        );
+        if (response.ok) {
+          const data = (await response.json()) as NearbyStoresResult;
+          if (Array.isArray(data.stores) && data.stores.length > 0) {
+            if (data.osmMatchCount > 0) {
+              setNearbyStores(data);
+              applyNearbyDetoursFromResult(data);
+              setNearbyStoresFeedback(
+                `${data.osmMatchCount} echte Filialen via OpenStreetMap für PLZ ${candidateZip} geladen${data.fromCache ? " (Cache)" : ""} & Wegzeiten übernommen.`,
+              );
+            } else {
+              setNearbyStores(null);
+              setNearbyStoresFeedback(
+                `Keine echten Filialen über OpenStreetMap für PLZ ${candidateZip} erreichbar. Deine Umweg-Eingaben bleiben unverändert.`,
+              );
+            }
+            return;
+          }
+        }
+      } catch {
+        // Statische PWA / kein Backend: direkt im Browser gegen OpenStreetMap abfragen
+      }
+
+      const directResult = await fetchNearbyStoresForZip(candidateZip);
+      if (directResult.osmMatchCount > 0) {
+        setNearbyStores(directResult);
+        applyNearbyDetoursFromResult(directResult);
+        setNearbyStoresFeedback(
+          `${directResult.osmMatchCount} echte Filialen direkt via OpenStreetMap für PLZ ${candidateZip} geladen & Wegzeiten übernommen.`,
+        );
+      } else {
+        setNearbyStores(null);
+        setNearbyStoresFeedback(
+          `OpenStreetMap derzeit nicht erreichbar (offline). Deine Umweg-Eingaben bleiben unverändert.`,
+        );
+      }
+    } finally {
+      setIsLoadingNearbyStores(false);
+    }
+  };
+
   const isWeekendShopping = shoppingDate >= weekWindow.thursday;
   const busyFetching = isSyncingZip || isLiveScraping;
+  const totalListCount = basketItems.length + customItems.length;
 
   return (
     <>
       <SiteHeader
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        listCount={basketItems.length}
+        listCount={totalListCount}
         activeZipCode={activeZipCode}
       />
 
@@ -1185,6 +1308,7 @@ export function ShoppingOptimizerApp({
                 shoppingDate={shoppingDate}
                 priceHistory={priceHistory}
                 customBasePrices={customBasePrices}
+                nearbyStores={nearbyStores}
                 weekday={formatWeekday(shoppingDate)}
                 onStartRoute={startRoute}
                 onLoadPreset={() => loadPreset(DEFAULT_PRESET_ID)}
@@ -1198,6 +1322,7 @@ export function ShoppingOptimizerApp({
                 onZipCodeChange={(value) => changeZipCode(value, true)}
                 region={currentRegion}
                 isSyncingZip={busyFetching}
+                shoppingDate={shoppingDate}
                 isWeekendShopping={isWeekendShopping}
                 onShoppingDayChange={(day) =>
                   setShoppingDate(day === "weekend" ? weekWindow.saturday : weekWindow.monday)
@@ -1212,6 +1337,15 @@ export function ShoppingOptimizerApp({
                 onDetourMinutesChange={changeDetourMinutes}
                 minSavingsPerDetourMinuteCents={minSavingsPerDetourMinuteCents}
                 onMinSavingsPerDetourMinuteChange={setMinSavingsPerDetourMinuteCents}
+                nearbyStores={nearbyStores}
+                isLoadingNearbyStores={isLoadingNearbyStores}
+                nearbyStoresFeedback={nearbyStoresFeedback}
+                onFetchNearbyStores={() => void fetchNearbyStores()}
+                onApplyNearbyDetours={() => {
+                  if (!nearbyStores) return;
+                  applyNearbyDetoursFromResult(nearbyStores);
+                  setNearbyStoresFeedback("Ermittelte OSM-Wegzeiten als Umwege übernommen.");
+                }}
               />
             </div>
           </div>
@@ -1220,8 +1354,14 @@ export function ShoppingOptimizerApp({
         {activeTab === "list" && (
           <ShoppingListView
             basketItems={basketItems}
+            customItems={customItems}
+            onAddCustomItem={addCustomItem}
+            onChangeCustomItemQuantity={changeCustomItemQuantity}
             onChangeQuantity={changeItemQuantity}
-            onClear={() => setBasketItems([])}
+            onClear={() => {
+              setBasketItems([]);
+              setCustomItems([]);
+            }}
             onLoadPreset={loadPreset}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -1266,6 +1406,8 @@ export function ShoppingOptimizerApp({
             offers={offers}
             shoppingDate={shoppingDate}
             priceHistory={priceHistory}
+            nearbyStores={nearbyStores}
+            customItems={customItems}
             mode={inStoreMode}
             onModeChange={setInStoreMode}
             checkedKeys={checkedKeys}
@@ -1343,7 +1485,7 @@ export function ShoppingOptimizerApp({
       <BottomNav
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        listCount={basketItems.length}
+        listCount={totalListCount}
       />
     </>
   );

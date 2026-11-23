@@ -1,4 +1,6 @@
-import { CATEGORY_MAP, type StoreId } from "@/lib/rules/catalog";
+import type { NearbyStoreLocation, NearbyStoresResult } from "@/lib/providers/store-locator";
+import { CATEGORY_MAP, DEPARTMENT_MAP, type StoreId } from "@/lib/rules/catalog";
+import { evaluateOpeningHours } from "@/lib/rules/opening-hours";
 import {
   formatEuroCents,
   type OfferRecord,
@@ -16,6 +18,7 @@ import { ITEM_PREFERENCE_LABELS } from "@/lib/rules/preferences";
 import { itemShortName } from "./format";
 import { type InStoreMode, type PlanLeg, resolvePlan } from "./plan";
 import { DealRatingBadge, PriceConfidenceBadge, ShrinkflationAlert } from "./PriceBadges";
+import type { CustomBasketItem } from "./ShoppingListView";
 import type { ShareStatus } from "./useHouseholdShare";
 import { cn, InfoIcon, StorePlate, ToggleChip } from "./ui";
 
@@ -24,6 +27,8 @@ interface InStoreViewProps {
   offers: readonly OfferRecord[];
   shoppingDate: string;
   priceHistory?: PriceHistorySummary;
+  nearbyStores?: NearbyStoresResult | null;
+  customItems?: readonly CustomBasketItem[];
   mode: InStoreMode;
   onModeChange: (mode: InStoreMode) => void;
   checkedKeys: Record<string, boolean>;
@@ -63,6 +68,8 @@ export const InStoreView = ({
   offers,
   shoppingDate,
   priceHistory,
+  nearbyStores,
+  customItems = [],
   mode,
   onModeChange,
   checkedKeys,
@@ -142,16 +149,23 @@ export const InStoreView = ({
           plan.legs.length > 1 ? "lg:grid-cols-2" : "mx-auto w-full max-w-2xl",
         )}
       >
-        {plan.legs.map((leg) => (
-          <RouteChecklist
-            key={`${leg.role}-${leg.storeId}`}
-            leg={leg}
-            nextStoreName={leg.role === "main" ? detourLeg?.storeName : undefined}
-            checkedKeys={checkedKeys}
-            onToggleChecked={onToggleChecked}
-            priceTools={priceTools}
-          />
-        ))}
+        {plan.legs.map((leg) => {
+          const candidate = nearbyStores?.stores.find((loc) => loc.storeId === leg.storeId);
+          const storeLocation = candidate?.source === "osm_overpass" ? candidate : undefined;
+          return (
+            <RouteChecklist
+              key={`${leg.role}-${leg.storeId}`}
+              leg={leg}
+              nextStoreName={leg.role === "main" ? detourLeg?.storeName : undefined}
+              storeLocation={storeLocation}
+              stateCode={nearbyStores?.stateCode}
+              customItems={leg.role !== "detour" ? customItems : []}
+              checkedKeys={checkedKeys}
+              onToggleChecked={onToggleChecked}
+              priceTools={priceTools}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -166,6 +180,9 @@ const LEG_TITLE: Record<PlanLeg["role"], string> = {
 interface RouteChecklistProps {
   leg: PlanLeg;
   nextStoreName?: string;
+  storeLocation?: NearbyStoreLocation;
+  stateCode?: NearbyStoresResult["stateCode"];
+  customItems: readonly CustomBasketItem[];
   checkedKeys: Record<string, boolean>;
   onToggleChecked: (key: string) => void;
   priceTools: BasePriceTools;
@@ -175,16 +192,30 @@ interface RouteChecklistProps {
 const RouteChecklist = ({
   leg,
   nextStoreName,
+  storeLocation,
+  stateCode,
+  customItems,
   checkedKeys,
   onToggleChecked,
   priceTools,
 }: RouteChecklistProps) => {
   const items = leg.departments.flatMap((department) => department.items);
-  const doneCount = items.filter((item) => checkedKeys[checkKeyFor(item)]).length;
+  const doneCount =
+    items.filter((item) => checkedKeys[checkKeyFor(item)]).length +
+    customItems.filter((c) => checkedKeys[`custom:${c.id}`]).length;
+  const totalCount = items.length + customItems.length;
   const nextStop = leg.departments.find((department) =>
     department.items.some((item) => !checkedKeys[checkKeyFor(item)]),
   );
   const isDetour = leg.variant === "detour";
+  const opening =
+    storeLocation && stateCode
+      ? evaluateOpeningHours({
+          openingHours: storeLocation.openingHours,
+          dateIso: priceTools.shoppingDate,
+          stateCode,
+        })
+      : null;
 
   return (
     <section
@@ -199,9 +230,25 @@ const RouteChecklist = ({
           <h2 className="flex-1 text-lg font-extrabold">{LEG_TITLE[leg.role]}</h2>
           <span className="text-lg font-extrabold tabular-nums">{formatEuroCents(leg.totalCents)}</span>
         </div>
+        {storeLocation && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-sign-muted">
+            <span>
+              {storeLocation.address} · {storeLocation.distanceKm.toFixed(1).replace(".", ",")} km
+              {opening ? ` · ${opening.label}` : ""}
+            </span>
+            <a
+              href={storeLocation.mapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="font-bold text-sign-ink underline underline-offset-2"
+            >
+              Route auf Karte
+            </a>
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[15px]">
           <span className="font-bold tabular-nums" aria-live="polite">
-            {doneCount} von {items.length} im Wagen
+            {doneCount} von {totalCount} im Wagen
           </span>
           <span className="text-sign-muted">
             {nextStop ? `Nächster Halt: ${nextStop.departmentName}` : "Alles im Wagen, ab zur Kasse"}
@@ -257,6 +304,59 @@ const RouteChecklist = ({
             </li>
           );
         })}
+        {customItems.length > 0 && (
+          <li className="relative grid grid-cols-[40px_minmax(0,1fr)] gap-x-3 pb-5 sm:gap-x-3.5">
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-0.5 left-[17px] top-[30px] w-1.5 bg-route-soft"
+            />
+            <span
+              aria-hidden="true"
+              className="relative z-10 flex size-10 items-center justify-center rounded-full border-[6px] border-route bg-paper pt-0.5 text-sm font-black"
+            >
+              +
+            </span>
+            <div className="min-w-0">
+              <h3 className="mb-2 mt-2 text-lg leading-tight font-extrabold">Eigene Artikel</h3>
+              <ul className="flex flex-col gap-1.5">
+                {customItems.map((custom) => {
+                  const key = `custom:${custom.id}`;
+                  const checked = Boolean(checkedKeys[key]);
+                  return (
+                    <li
+                      key={key}
+                      className={cn("rounded-md transition", checked ? "bg-paper" : "bg-panel")}
+                    >
+                      <label className="flex min-h-14 cursor-pointer items-start gap-3 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => onToggleChecked(key)}
+                          className="size-6 flex-none accent-route"
+                        />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="flex items-baseline justify-between gap-3">
+                            <span className={cn("font-bold", checked && "text-muted line-through")}>
+                              {custom.quantity}× {custom.name}
+                            </span>
+                            {custom.estimatedPriceCents != null && (
+                              <span className="flex-none text-sm font-bold text-muted tabular-nums">
+                                ca. {formatEuroCents(custom.estimatedPriceCents * custom.quantity)}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[13px] text-muted">
+                            {DEPARTMENT_MAP[custom.department]?.name}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </li>
+        )}
         <li className="grid grid-cols-[40px_minmax(0,1fr)] items-center gap-x-3 sm:gap-x-3.5">
           <span
             aria-hidden="true"

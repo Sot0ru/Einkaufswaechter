@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import type { NearbyStoreLocation, NearbyStoresResult } from "@/lib/providers/store-locator";
+import type { StoreId } from "@/lib/rules/catalog";
+import { evaluateOpeningHours } from "@/lib/rules/opening-hours";
 import {
   formatEuroCents,
   type OfferRecord,
@@ -23,6 +26,7 @@ interface CompareViewProps {
   shoppingDate: string;
   priceHistory?: PriceHistorySummary;
   customBasePrices?: CustomBasePricesMap;
+  nearbyStores?: NearbyStoresResult | null;
   weekday: string;
   onStartRoute: (mode: InStoreMode) => void;
   onLoadPreset: () => void;
@@ -52,6 +56,7 @@ export const CompareView = ({
   shoppingDate,
   priceHistory,
   customBasePrices,
+  nearbyStores,
   weekday,
   onStartRoute,
   onLoadPreset,
@@ -60,6 +65,9 @@ export const CompareView = ({
 }: CompareViewProps) => {
   const bestSingle = optimization.bestSingleStore;
   const plan = resolvePlan(optimization, "recommended");
+  const locationByStore = new Map<StoreId, NearbyStoreLocation>(
+    (nearbyStores?.stores ?? []).map((loc) => [loc.storeId, loc]),
+  );
 
   if (!bestSingle || !plan) {
     return (
@@ -205,6 +213,54 @@ export const CompareView = ({
             : "Die Haltestellen folgen der üblichen Laufroute im Markt."
         }
       />
+
+      {nearbyStores && nearbyStores.osmMatchCount > 0 && (
+        <section aria-label="Nächste Filialen und Öffnungszeiten" className="grid gap-3 sm:grid-cols-2">
+          {plan.legs.map((leg) => {
+            const loc = locationByStore.get(leg.storeId);
+            if (!loc || loc.source !== "osm_overpass") return null;
+            const opening = evaluateOpeningHours({
+              openingHours: loc.openingHours,
+              dateIso: shoppingDate,
+              stateCode: nearbyStores.stateCode,
+            });
+            const isClosedOrHoliday =
+              opening.state === "closed" || opening.state === "holiday_closed";
+
+            return (
+              <div
+                key={`loc-${leg.role}-${leg.storeId}`}
+                className={cn(
+                  "flex items-start justify-between gap-3 rounded-md border p-3.5 text-sm",
+                  isClosedOrHoliday ? "border-detour bg-detour-soft" : "border-line bg-panel",
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="font-extrabold">
+                    {loc.branchName}{" "}
+                    <span className="font-semibold text-muted tabular-nums">
+                      · {loc.distanceKm.toFixed(1).replace(".", ",")} km ({loc.driveMinutes} Min.
+                      Auto / {loc.walkMinutes} Min. zu Fuß)
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-muted">{loc.address}</p>
+                  <p className={cn("mt-1 font-bold", isClosedOrHoliday ? "text-ink" : "text-route")}>
+                    {opening.label}
+                  </p>
+                </div>
+                <a
+                  href={loc.mapsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-none rounded border border-line-strong bg-paper px-2.5 py-1.5 text-xs font-bold text-route transition hover:border-route"
+                >
+                  Karte
+                </a>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       {favoritesCard}
 

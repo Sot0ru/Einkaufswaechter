@@ -135,4 +135,23 @@ export const SCHEMA_STATEMENTS = [
     expires_at timestamptz NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS household_shares_list_idx ON household_shares (list_id)`,
+  // Ausbaustufe 4, Paket 9: Echte Filial-Entfernungen & Öffnungszeiten (OSM-Cache je PLZ)
+  `CREATE TABLE IF NOT EXISTS store_locations (
+    zip_code text NOT NULL,
+    store_id text NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+    store_name text NOT NULL,
+    branch_name text NOT NULL,
+    address text NOT NULL,
+    city text NOT NULL,
+    lat text NOT NULL,
+    lon text NOT NULL,
+    distance_meters integer NOT NULL,
+    walk_minutes integer NOT NULL,
+    drive_minutes integer NOT NULL,
+    detour_minutes integer NOT NULL,
+    opening_hours text NOT NULL,
+    source text NOT NULL DEFAULT 'osm_overpass',
+    fetched_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (zip_code, store_id)
+  )`,
 ];

@@ -60,7 +60,12 @@ export const ensureCatalogAndDemoOffers = async (
     }
   }
 
-  await db.insert(schema.basePrices).values(basePriceRows).onConflictDoNothing();
+  for (let i = 0; i < basePriceRows.length; i += 400) {
+    await db
+      .insert(schema.basePrices)
+      .values(basePriceRows.slice(i, i + 400))
+      .onConflictDoNothing();
+  }
 
   // 4. Demo-Wochenangebote für die aktuelle Woche sicherstellen
   const demoOffers = buildDemoOffersForDate(referenceDate);

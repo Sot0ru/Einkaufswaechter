@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import type { CustomBasketItem } from "@/components/ShoppingListView";
 import {
   MOBILE_STORAGE_KEY,
   ShoppingOptimizerApp,
@@ -23,6 +24,7 @@ const todayInGermany = (): string =>
 interface PersistedMobileState {
   activeZipCode?: string;
   basketItems?: BasketItemInput[];
+  customItems?: CustomBasketItem[];
   checkedKeys?: Record<string, boolean>;
   customBasePrices?: CustomBasePricesMap;
   savedLists?: SavedShoppingList[];
@@ -82,6 +84,7 @@ const bootstrap = () => {
       weekWindow={weekWindow}
       initialZipCode={initialZip}
       initialBasketItems={stored.basketItems}
+      initialCustomItems={stored.customItems}
       initialCheckedKeys={stored.checkedKeys}
       initialCustomBasePrices={stored.customBasePrices}
       initialReceiptAliases={stored.receiptAliases}

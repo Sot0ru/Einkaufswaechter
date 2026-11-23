@@ -1,10 +1,12 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import {
   CATEGORIES,
   CATEGORY_MAP,
   type CategoryDefinition,
+  DEPARTMENT_MAP,
   type DepartmentId,
   DEPARTMENTS,
+  searchCatalogCategories,
   SHOPPING_PRESETS,
 } from "@/lib/rules/catalog";
 import { type BasketItemInput, formatEuroCents } from "@/lib/rules/optimizer";
@@ -14,10 +16,21 @@ import {
   type ItemPreference,
 } from "@/lib/rules/preferences";
 import { categoryShortName } from "./format";
-import { cn, StarIcon, ToggleChip } from "./ui";
+import { cn, SECONDARY_BUTTON, StarIcon, ToggleChip } from "./ui";
+
+export interface CustomBasketItem {
+  id: string;
+  name: string;
+  department: DepartmentId;
+  quantity: number;
+  estimatedPriceCents: number | null;
+}
 
 interface ShoppingListViewProps {
   basketItems: readonly BasketItemInput[];
+  customItems: readonly CustomBasketItem[];
+  onAddCustomItem: (item: Omit<CustomBasketItem, "id" | "quantity">) => void;
+  onChangeCustomItemQuantity: (id: string, delta: number) => void;
   onChangeQuantity: (categoryId: string, delta: number) => void;
   onClear: () => void;
   onLoadPreset: (presetId: string) => void;
@@ -34,11 +47,6 @@ type CatalogFilter = DepartmentId | "all" | "favorites";
 
 const cheapestBasePriceCents = (category: CategoryDefinition): number =>
   Math.min(...Object.values(category.defaultBasePrices).map((entry) => entry.priceCents));
-
-const matchesQuery = (category: CategoryDefinition, query: string): boolean =>
-  category.name.toLowerCase().includes(query) ||
-  category.subtitle.toLowerCase().includes(query) ||
-  category.includeKeywords.some((keyword) => keyword.includes(query));
 
 const STEPPER_BUTTON =
   "flex size-11 items-center justify-center rounded border border-line-strong bg-paper text-lg font-bold transition hover:border-route";
@@ -66,6 +74,9 @@ const FavoriteToggle = ({ active, label, onToggle }: FavoriteToggleProps) => (
 
 export const ShoppingListView = ({
   basketItems,
+  customItems,
+  onAddCustomItem,
+  onChangeCustomItemQuantity,
   onChangeQuantity,
   onClear,
   onLoadPreset,
@@ -78,11 +89,11 @@ export const ShoppingListView = ({
   recipesPanel,
 }: ShoppingListViewProps) => {
   const [selectedFilter, setSelectedFilter] = useState<CatalogFilter>("all");
+  const [customNameInput, setCustomNameInput] = useState("");
+  const [customDept, setCustomDept] = useState<DepartmentId>("trocken");
+  const [customPriceInput, setCustomPriceInput] = useState("");
 
-  const searchedCatalog = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    return query ? CATEGORIES.filter((category) => matchesQuery(category, query)) : CATEGORIES;
-  }, [searchQuery]);
+  const searchedCatalog = useMemo(() => searchCatalogCategories(searchQuery), [searchQuery]);
   const filteredCatalog =
     selectedFilter === "favorites"
       ? searchedCatalog.filter((category) => favoriteIds.has(category.id))
@@ -94,6 +105,25 @@ export const ShoppingListView = ({
     (department) =>
       selectedFilter === "all" || selectedFilter === "favorites" || selectedFilter === department.id,
   );
+  const totalListCount = basketItems.length + customItems.length;
+
+  const handleSubmitCustomItem = (event: FormEvent) => {
+    event.preventDefault();
+    const candidateName = (customNameInput.trim() || searchQuery.trim()).slice(0, 80);
+    if (candidateName.length < 2) return;
+    const parsedPrice = Number.parseFloat(customPriceInput.trim().replace(",", "."));
+    const estimatedPriceCents =
+      Number.isFinite(parsedPrice) && parsedPrice > 0 && parsedPrice < 500
+        ? Math.round(parsedPrice * 100)
+        : null;
+    onAddCustomItem({
+      name: candidateName,
+      department: customDept,
+      estimatedPriceCents,
+    });
+    setCustomNameInput("");
+    setCustomPriceInput("");
+  };
 
   return (
     <div className="grid items-start gap-8 lg:grid-cols-12">
@@ -103,7 +133,7 @@ export const ShoppingListView = ({
             <h1 id="list-title" className="text-[26px] leading-tight font-black tracking-tight">
               Deine Einkaufsliste
             </h1>
-            {basketItems.length > 0 && (
+            {totalListCount > 0 && (
               <button
                 type="button"
                 onClick={onClear}
@@ -113,9 +143,9 @@ export const ShoppingListView = ({
               </button>
             )}
           </div>
-          <p className="text-[15px] text-muted">{basketItems.length} Artikel</p>
+          <p className="text-[15px] text-muted">{totalListCount} Artikel</p>
 
-          {basketItems.length === 0 ? (
+          {totalListCount === 0 ? (
             <p className="mt-5 text-[17px]">
               Noch leer. Wähle Artikel aus dem Sortiment oder starte mit einer Vorlage.
             </p>
@@ -179,6 +209,45 @@ export const ShoppingListView = ({
                   </li>
                 );
               })}
+              {customItems.map((custom) => (
+                <li key={custom.id} className="flex items-start gap-1.5 py-2.5">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-11 flex-none items-center justify-center text-sm font-black text-route"
+                  >
+                    +
+                  </span>
+                  <div className="min-w-0 flex-1 pt-1">
+                    <p className="font-bold">{custom.name}</p>
+                    <p className="text-sm text-muted">
+                      Eigener Artikel · {DEPARTMENT_MAP[custom.department]?.shortName}
+                      {custom.estimatedPriceCents != null &&
+                        ` · ca. ${formatEuroCents(custom.estimatedPriceCents)}`}
+                    </p>
+                  </div>
+                  <div className="flex flex-none items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onChangeCustomItemQuantity(custom.id, -1)}
+                      aria-label={`${custom.name} reduzieren`}
+                      className={STEPPER_BUTTON}
+                    >
+                      −
+                    </button>
+                    <span className="w-7 pt-0.5 text-center font-extrabold tabular-nums">
+                      {custom.quantity}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onChangeCustomItemQuantity(custom.id, 1)}
+                      aria-label={`${custom.name} erhöhen`}
+                      className={STEPPER_BUTTON}
+                    >
+                      +
+                    </button>
+                  </div>
+                </li>
+              ))}
             </ul>
           )}
         </section>
@@ -217,16 +286,64 @@ export const ShoppingListView = ({
               </span>
             </h2>
             <label className="sm:w-72">
-              <span className="sr-only">Artikel suchen</span>
+              <span className="sr-only">Artikel oder Marke suchen</span>
               <input
                 type="search"
                 value={searchQuery}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Suchen, z. B. Butter oder Kaffee"
+                placeholder="Suchen, z. B. Nutella, Pampers, Butter…"
                 className="h-11 w-full rounded border border-line-strong bg-paper px-3 pt-0.5"
               />
             </label>
           </div>
+
+          <form
+            onSubmit={handleSubmitCustomItem}
+            className="mt-3 flex flex-wrap items-end gap-2 rounded-md border border-dashed border-line-strong bg-panel p-3"
+          >
+            <label className="min-w-[170px] flex-1 text-xs font-bold">
+              Eigenen Artikel frei hinzufügen
+              <input
+                type="text"
+                value={customNameInput}
+                onChange={(event) => setCustomNameInput(event.target.value)}
+                placeholder={
+                  searchQuery.trim()
+                    ? `z. B. ${searchQuery.trim()}`
+                    : "z. B. Kardamom-Kapseln oder Backform"
+                }
+                className="mt-1 h-10 w-full rounded border border-line-strong bg-paper px-2.5 text-sm font-semibold"
+              />
+            </label>
+            <label className="w-36 text-xs font-bold">
+              Abteilung
+              <select
+                value={customDept}
+                onChange={(event) => setCustomDept(event.target.value as DepartmentId)}
+                className="mt-1 h-10 w-full rounded border border-line-strong bg-paper px-2 text-sm font-semibold"
+              >
+                {DEPARTMENTS.map((dept) => (
+                  <option key={dept.id} value={dept.id}>
+                    {dept.shortName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="w-24 text-xs font-bold">
+              ca. € (opt.)
+              <input
+                type="text"
+                inputMode="decimal"
+                value={customPriceInput}
+                onChange={(event) => setCustomPriceInput(event.target.value)}
+                placeholder="2,50"
+                className="mt-1 h-10 w-full rounded border border-line-strong bg-paper px-2 text-sm font-semibold tabular-nums"
+              />
+            </label>
+            <button type="submit" className={cn(SECONDARY_BUTTON, "h-10 min-h-10 px-3 text-sm")}>
+              + Auf Liste
+            </button>
+          </form>
 
           <fieldset className="mt-4">
             <legend className="sr-only">Nach Abteilung filtern</legend>
@@ -260,7 +377,7 @@ export const ShoppingListView = ({
             <p className="mt-5 text-[17px]">
               {selectedFilter === "favorites" && favoriteIds.size === 0
                 ? "Noch keine Stammprodukte. Tippe auf den Stern neben einem Artikel, den du regelmäßig kaufst."
-                : `Kein Artikel passt zu „${searchQuery}“. Versuch es mit einem allgemeineren Begriff.`}
+                : `Kein Katalog-Artikel passt zu „${searchQuery}“. Nutze einfach das Feld „Eigenen Artikel frei hinzufügen“ direkt darüber!`}
             </p>
           )}
 

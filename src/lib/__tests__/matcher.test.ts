@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseBrochureText } from "@/lib/providers/text-importer";
-import { CATEGORIES, DEPARTMENTS, STORES } from "@/lib/rules/catalog";
+import { CATEGORIES, DEPARTMENTS, searchCatalogCategories, STORES } from "@/lib/rules/catalog";
 import {
   computeUnitPriceCents,
   detectLoyaltyRequirement,
@@ -9,9 +9,9 @@ import {
 } from "@/lib/rules/matcher";
 
 describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
-  it("umfasst mindestens 230 valide, eindeutig konfigurierte Alltags-Kategorien über alle 8 Abteilungen", () => {
-    expect(CATEGORIES.length).toBeGreaterThanOrEqual(230);
-    expect(CATEGORIES.length).toBeLessThanOrEqual(300);
+  it("umfasst mindestens 400 valide, eindeutig konfigurierte Vollsortiment-Kategorien über alle 8 Abteilungen", () => {
+    expect(CATEGORIES.length).toBeGreaterThanOrEqual(400);
+    expect(CATEGORIES.length).toBeLessThanOrEqual(500);
 
     const seenIds = new Set<string>();
     for (const cat of CATEGORIES) {
@@ -47,11 +47,16 @@ describe("Regelbasierter Angebots-Matcher (matcher.ts)", () => {
 
     for (const dept of DEPARTMENTS) {
       const countInDept = CATEGORIES.filter((c) => c.department === dept.id).length;
-      expect(countInDept).toBeGreaterThanOrEqual(18);
+      expect(countInDept).toBeGreaterThanOrEqual(30);
     }
+
+    // Marken-/Synonym-Suche prüfen
+    expect(searchCatalogCategories("Nutella").some((c) => c.id === "nuss_nougat_creme_400g")).toBe(true);
+    expect(searchCatalogCategories("Pampers").some((c) => c.id === "windeln_30st")).toBe(true);
+    expect(searchCatalogCategories("Pringles").some((c) => c.id === "kartoffelchips_150g")).toBe(true);
   });
 
-  it("ordnet für jede der 240 Kategorien alle hinterlegten includeKeywords deterministisch der richtigen Kategorie zu", () => {
+  it("ordnet für jede der 400+ Kategorien alle hinterlegten includeKeywords deterministisch der richtigen Kategorie zu", () => {
     for (const cat of CATEGORIES) {
       const unitLabel =
         cat.unit === "g" ? "g" : cat.unit === "ml" ? "ml" : "Stück";

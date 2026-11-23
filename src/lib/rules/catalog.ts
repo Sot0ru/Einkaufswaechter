@@ -1,4 +1,8 @@
 import { buildExtendedCategories } from "./catalog-extended";
+import {
+  buildVollsortimentCategories,
+  CATEGORY_SEARCH_SYNONYMS,
+} from "./catalog-vollsortiment";
 
 export type StoreId = "lidl" | "aldi" | "rewe" | "edeka" | "kaufland" | "netto" | "penny";
 
@@ -690,7 +694,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "backwaren",
     unit: "stueck",
     standardAmount: 6,
-    includeKeywords: ["aufbackbrötchen", "weizenbrötchen", "sonntagsbrötchen", "steinofenbrötchen", "kaiserbrötchen"],
+    includeKeywords: ["aufbackbrötchen", "weizenbrötchen", "sonntagsbrötchen", "steinofenbrötchen"],
     excludeKeywords: ["paniermehl", "semmelbrösel", "burger", "hot-dog", "toastbrötchen"],
     minPlausiblePriceCents: 59,
     maxPlausiblePriceCents: 229,
@@ -738,7 +742,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "backwaren",
     unit: "g",
     standardAmount: 500,
-    includeKeywords: ["vollkornbrot", "sonnenblumenkernbrot", "kürbiskernbrot", "mehrkornbrot", "schwarzbrot", "pumpernickel"],
+    includeKeywords: ["vollkornbrot", "sonnenblumenkernbrot", "kürbiskernbrot", "mehrkornbrot", "schwarzbrot"],
     excludeKeywords: ["toast", "knäckebrot", "backmischung"],
     minPlausiblePriceCents: 79,
     maxPlausiblePriceCents: 249,
@@ -830,7 +834,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "backwaren",
     unit: "stueck",
     standardAmount: 4,
-    includeKeywords: ["laugenbrezeln", "laugenstangen", "laugenbrötchen"],
+    includeKeywords: ["laugenbrezeln", "laugenbrötchen"],
     excludeKeywords: ["salzbrezeln", "cracker", "chips", "tiefgefroren", "tk"],
     minPlausiblePriceCents: 89,
     maxPlausiblePriceCents: 279,
@@ -1064,7 +1068,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "kuehlung",
     unit: "ml",
     standardAmount: 1000,
-    includeKeywords: ["mandeldrink", "mandelmilch", "sojadrink", "sojamilch", "alpro mandel"],
+    includeKeywords: ["mandeldrink", "mandelmilch", "alpro mandel"],
     excludeKeywords: ["mandeln", "mandelmus", "stieleis", "schokolade"],
     minPlausiblePriceCents: 79,
     maxPlausiblePriceCents: 279,
@@ -1334,7 +1338,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "kuehlung",
     unit: "g",
     standardAmount: 500,
-    includeKeywords: ["frische eierspätzle", "frische spätzle", "schupfnudeln", "knöpfle", "bürger maultaschen", "maultaschen"],
+    includeKeywords: ["frische eierspätzle", "frische spätzle", "knöpfle"],
     excludeKeywords: ["trocken", "suppe"],
     minPlausiblePriceCents: 89,
     maxPlausiblePriceCents: 279,
@@ -1391,7 +1395,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "fleisch_wurst",
     unit: "g",
     standardAmount: 400,
-    includeKeywords: ["hähnchenbrustfilet", "hähnchen-brustfilet", "putenbrustfilet", "hähncheninnenfilet"],
+    includeKeywords: ["hähnchenbrustfilet", "hähnchen-brustfilet", "hähncheninnenfilet"],
     excludeKeywords: ["aufschnitt", "katzenfutter", "hundefutter", "paniert", "nuggets"],
     minPlausiblePriceCents: 279,
     maxPlausiblePriceCents: 699,
@@ -1434,7 +1438,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "fleisch_wurst",
     unit: "g",
     standardAmount: 400,
-    includeKeywords: ["putenschnitzel", "putengeschnetzeltes", "hähnchengeschnetzeltes", "putenmedaillons"],
+    includeKeywords: ["putengeschnetzeltes", "hähnchengeschnetzeltes", "putenmedaillons"],
     excludeKeywords: ["aufschnitt", "katzenfutter", "paniert", "fertiggericht"],
     minPlausiblePriceCents: 249,
     maxPlausiblePriceCents: 679,
@@ -1460,7 +1464,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "fleisch_wurst",
     unit: "g",
     standardAmount: 500,
-    includeKeywords: ["schweineschnitzel", "minutensteaks", "schweinelachs", "schweinerückensteaks", "nackensteaks"],
+    includeKeywords: ["schweineschnitzel", "minutensteaks", "schweinelachs", "schweinerückensteaks"],
     excludeKeywords: ["toastschnitzel", "vegan", "katzenfutter"],
     minPlausiblePriceCents: 249,
     maxPlausiblePriceCents: 699,
@@ -1486,7 +1490,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "fleisch_wurst",
     unit: "g",
     standardAmount: 500,
-    includeKeywords: ["rindergulasch", "rinderbraten", "schmorbraten", "gemischtes gulasch", "suppenfleisch"],
+    includeKeywords: ["rindergulasch", "gemischtes gulasch", "suppenfleisch"],
     excludeKeywords: ["gulaschsuppe", "dose", "fix für gulasch", "katzenfutter"],
     minPlausiblePriceCents: 349,
     maxPlausiblePriceCents: 899,
@@ -1728,7 +1732,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "trocken",
     unit: "g",
     standardAmount: 500,
-    includeKeywords: ["spaghetti", "fusilli", "penne rigate", "nudeln", "maccheroni", "barilla", "birkel"],
+    includeKeywords: ["spaghetti", "fusilli", "nudeln", "maccheroni", "barilla", "birkel"],
     excludeKeywords: ["fertiggericht", "nudelgericht", "nudelsalat", "instant", "ramen", "dosengericht", "pesto", "schupfnudeln", "vollkorn", "integrale", "lasagne"],
     minPlausiblePriceCents: 49,
     maxPlausiblePriceCents: 249,
@@ -2023,7 +2027,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "trocken",
     unit: "ml",
     standardAmount: 500,
-    includeKeywords: ["aceto balsamico", "balsamico di modena", "apfelessig", "weißweinessig", "kühne essig"],
+    includeKeywords: ["aceto balsamico", "balsamico di modena", "kühne essig"],
     excludeKeywords: ["reiniger", "chips"],
     minPlausiblePriceCents: 69,
     maxPlausiblePriceCents: 349,
@@ -2067,7 +2071,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "trocken",
     unit: "g",
     standardAmount: 400,
-    includeKeywords: ["kidneybohnen", "kichererbsen", "weiße bohnen", "bonduelle kidney"],
+    includeKeywords: ["kidneybohnen", "kichererbsen", "bonduelle kidney"],
     excludeKeywords: ["hummus", "kaffeebohnen"],
     minPlausiblePriceCents: 49,
     maxPlausiblePriceCents: 179,
@@ -2311,7 +2315,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "trocken",
     unit: "g",
     standardAmount: 200,
-    includeKeywords: ["studentenfutter", "cashewkerne", "mandelkerne", "walnusskerne", "pistazien", "seeberger"],
+    includeKeywords: ["studentenfutter", "nussmix", "seeberger"],
     excludeKeywords: ["mandeldrink", "mandelmilch", "schokolade", "eis"],
     minPlausiblePriceCents: 119,
     maxPlausiblePriceCents: 399,
@@ -2446,7 +2450,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "tiefkuehl",
     unit: "g",
     standardAmount: 750,
-    includeKeywords: ["kaisergemüse", "buttergemüse", "tk-erbsen", "gemüsepfanne tiefgefroren", "iglo erbsen"],
+    includeKeywords: ["gemüsepfanne tiefgefroren", "tk gemüsemix", "pfannengemüse tiefkühl"],
     excludeKeywords: ["dose", "glas"],
     minPlausiblePriceCents: 99,
     maxPlausiblePriceCents: 329,
@@ -2616,7 +2620,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "getraenke",
     unit: "ml",
     standardAmount: 9000,
-    includeKeywords: ["mineralwasser", "natürliches mineralwasser", "volvic", "gerolsteiner", "vittel"],
+    includeKeywords: ["mineralwasser", "natürliches mineralwasser", "gerolsteiner", "saskia mineralwasser"],
     excludeKeywords: ["wassermelone", "wasserkocher", "gesichtswasser", "mundwasser"],
     minPlausiblePriceCents: 129,
     maxPlausiblePriceCents: 599,
@@ -2758,7 +2762,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "getraenke",
     unit: "ml",
     standardAmount: 1500,
-    includeKeywords: ["coca-cola", "pepsi", "fanta", "sprite", "mezzo mix", "paulaner spezi", "freeway cola"],
+    includeKeywords: ["coca-cola", "pepsi", "freeway cola", "fritz kola"],
     excludeKeywords: ["fruchtgummi", "haribo"],
     minPlausiblePriceCents: 49,
     maxPlausiblePriceCents: 199,
@@ -2804,7 +2808,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "getraenke",
     unit: "ml",
     standardAmount: 500,
-    includeKeywords: ["pilsener", "krombacher", "bitburger", "veltins", "warsteiner", "beck's", "paulaner weißbier", "perlenbacher"],
+    includeKeywords: ["pilsener", "krombacher", "bitburger", "veltins", "warsteiner", "beck's", "perlenbacher"],
     excludeKeywords: ["bierschinken", "bierhefe", "alkoholfrei", "0,0%", "0,0 %"],
     minPlausiblePriceCents: 39,
     maxPlausiblePriceCents: 159,
@@ -2942,7 +2946,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "haushalt",
     unit: "stueck",
     standardAmount: 20,
-    includeKeywords: ["vollwaschmittel", "colorwaschmittel", "persil", "ariel", "lenor waschmittel", "spee", "weißer riese", "formil"],
+    includeKeywords: ["vollwaschmittel", "persil", "ariel", "lenor waschmittel", "spee", "weißer riese", "formil"],
     excludeKeywords: ["weichspüler"],
     minPlausiblePriceCents: 249,
     maxPlausiblePriceCents: 799,
@@ -3007,7 +3011,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "haushalt",
     unit: "stueck",
     standardAmount: 1,
-    includeKeywords: ["backpapier", "alufolie", "aluminiumfolie", "frischhaltefolie", "toppits"],
+    includeKeywords: ["backpapier", "alufolie", "aluminiumfolie", "toppits"],
     excludeKeywords: [],
     minPlausiblePriceCents: 69,
     maxPlausiblePriceCents: 279,
@@ -3106,7 +3110,7 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     department: "haushalt",
     unit: "g",
     standardAmount: 400,
-    includeKeywords: ["katzenfutter", "hundefutter", "whiskas", "felix katzenfutter", "sheba", "pedigree", "cesar", "coshida"],
+    includeKeywords: ["katzenfutter", "whiskas", "felix katzenfutter", "sheba", "coshida"],
     excludeKeywords: ["katzenstreu"],
     minPlausiblePriceCents: 49,
     maxPlausiblePriceCents: 249,
@@ -3116,11 +3120,45 @@ export const CATEGORIES: readonly CategoryDefinition[] = [
     }),
   },
   ...buildExtendedCategories(storeBasePrices),
+  ...buildVollsortimentCategories(storeBasePrices),
 ] as const;
 
 export const CATEGORY_MAP: Record<string, CategoryDefinition> = Object.fromEntries(
   CATEGORIES.map((c) => [c.id, c]),
 );
+
+/**
+ * Durchsucht alle normierten Kategorien inkl. Kurznamen, Include-Keywords und
+ * gängiger Marken-/Alltagssynonyme (z. B. „Nutella“, „Pampers“, „Pringles“).
+ */
+export const searchCatalogCategories = (rawQuery: string): readonly CategoryDefinition[] => {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return CATEGORIES;
+
+  const scored: Array<{ category: CategoryDefinition; rank: number }> = [];
+  for (const category of CATEGORIES) {
+    const nameLower = category.name.toLowerCase();
+    const shortLower = category.shortName?.toLowerCase() ?? "";
+    const subtitleLower = category.subtitle.toLowerCase();
+    const synonyms = CATEGORY_SEARCH_SYNONYMS[category.id] ?? [];
+
+    if (nameLower.startsWith(query) || shortLower.startsWith(query)) {
+      scored.push({ category, rank: 1 });
+    } else if (nameLower.includes(query) || shortLower.includes(query)) {
+      scored.push({ category, rank: 2 });
+    } else if (
+      category.includeKeywords.some((kw) => kw.includes(query)) ||
+      synonyms.some((syn) => syn.includes(query))
+    ) {
+      scored.push({ category, rank: 3 });
+    } else if (subtitleLower.includes(query)) {
+      scored.push({ category, rank: 4 });
+    }
+  }
+
+  scored.sort((a, b) => a.rank - b.rank);
+  return scored.map((entry) => entry.category);
+};
 
 export interface ShoppingPreset {
   id: string;
