@@ -167,10 +167,76 @@ describe("Open Prices Provider (Open Food Facts)", () => {
     expect(butterOffer?.loyaltyPriceCents).toBe(149);
     expect(butterOffer?.title).toContain("Berlin");
 
-    // Eigenmarken-Vollmilch (nicht rabattiert) erzeugt eine Basispreis-Kalibrierung
+    // Lokale nicht-rabattierte Eigenmarken-Vollmilch erzeugt eine Basispreis-Kalibrierung, aber kein Angebot
     const milkCal = artifacts.baseCalibrations.find((c) => c.categoryId === "vollmilch_1l");
     expect(milkCal?.priceCents).toBe(99);
+    expect(artifacts.offers.some((o) => o.categoryId === "vollmilch_1l")).toBe(false);
     expect(artifacts.localMatchedCount).toBe(2);
+  });
+
+  it("zählt alte oder bundesweite Open-Prices-Rabatte sowie Normalpreise nicht als aktuelle Wochenangebote und kalibriert nur lokal", () => {
+    const oldDiscount = matchOpenPriceItem(
+      {
+        ...SAMPLE_OPEN_PRICES_ITEMS[0],
+        id: 3001,
+        date: "2026-08-28", // 87 Tage alt -> längst abgelaufen
+        location: {
+          ...SAMPLE_OPEN_PRICES_ITEMS[0].location!,
+          osm_address_city: "Hamburg",
+        },
+      },
+      true,
+    )!;
+    const nationwideDiscount = matchOpenPriceItem(
+      {
+        ...SAMPLE_OPEN_PRICES_ITEMS[0],
+        id: 3002,
+        date: "2026-11-23", // aktuelle Woche, aber nicht lokal
+        location: {
+          ...SAMPLE_OPEN_PRICES_ITEMS[0].location!,
+          osm_brand: "REWE",
+          osm_name: "REWE",
+          osm_address_city: "Hamburg",
+        },
+      },
+      false,
+    )!;
+    const nationwideRegular = matchOpenPriceItem(
+      {
+        ...SAMPLE_OPEN_PRICES_ITEMS[2],
+        id: 3003,
+        price: "0.890", // unter Richtpreis, aber NICHT rabattiert & NICHT lokal
+        date: "2026-11-23",
+        location: {
+          ...SAMPLE_OPEN_PRICES_ITEMS[2].location!,
+          osm_address_city: "München",
+        },
+      },
+      false,
+    )!;
+    const localCheaperRegular = matchOpenPriceItem(
+      {
+        ...SAMPLE_OPEN_PRICES_ITEMS[1], // Bananen 1,19 €, nicht rabattiert, lokal
+        id: 3004,
+        date: "2026-11-23",
+      },
+      true,
+    )!;
+
+    const artifacts = buildOpenPricesSyncArtifacts({
+      entries: [oldDiscount, nationwideDiscount, nationwideRegular, localCheaperRegular],
+      zipCode: "80331",
+      referenceDate: "2026-11-23",
+    });
+
+    // Keine dieser Beobachtungen darf als aktuelles Wochenangebot auftauchen
+    expect(artifacts.offers).toHaveLength(0);
+    // Alle Beobachtungen bleiben aber in der Preishistorie (verifiedPrices) erhalten
+    expect(artifacts.verifiedPrices).toHaveLength(4);
+    // Nur lokale Normalpreise kalibrieren Basispreise – bundesweite (München/Hamburg) nicht
+    expect(artifacts.baseCalibrations.every((c) => c.isLocal)).toBe(true);
+    expect(artifacts.baseCalibrations.some((c) => c.categoryId === "vollmilch_1l")).toBe(false);
+    expect(artifacts.baseCalibrations.some((c) => c.categoryId === "bananen_1kg")).toBe(true);
   });
 
   it("ruft Open Prices per PLZ & Barcode mit gemocktem fetch ab und fällt offline sauber zurück", async () => {
@@ -212,7 +278,8 @@ describe("Open Prices Provider (Open Food Facts)", () => {
     });
     expect(zipRes.source).toBe("open_prices_live");
     expect(zipRes.matchedCount).toBe(3);
-    expect(zipRes.offers.some((o) => o.id.startsWith("openprices-lidl-butter_250g"))).toBe(true);
+    expect(zipRes.offers).toHaveLength(1);
+    expect(zipRes.offers[0].id.startsWith("openprices-lidl-butter_250g")).toBe(true);
 
     const barcodeRes = await fetchOpenPricesByBarcode("4008400404127", { fetchImpl: mockFetch });
     expect(barcodeRes.source).toBe("open_prices_live");
@@ -319,10 +386,44 @@ APPLE PAY                          4,86`;
     expect(pasta.effectivePriceCents).toBe(99);
     expect(pasta.usedLoyaltyApp).toBe(true);
   });
+
+  it("zerschneidet ausgeschriebene Wörter nicht durch Abkürzungsregeln (Wortgrenzen-Regressionstest)", () => {
+    const regressionBon = `REWE Markt GmbH
+Hauptstr. 10
+50667 Köln
+Datum: 20.11.2026
+
+KARTOFFELCHIPS 150G                1,49 A
+REWE BIO VOLLMILCH 1L              1,29 A
+SPUELMASCHINENTABS 40ST            3,99 B
+MILSANI JOGHURT 500G               0,89 A
+SUMME EUR                          7,66`;
+
+    const parsed = parseReceiptText({ text: regressionBon });
+    expect(parsed.items).toHaveLength(4);
+
+    const chips = parsed.items[0];
+    expect(chips.expandedLabel.toLowerCase()).toBe("kartoffelchips 150g");
+    expect(chips.expandedLabel.toLowerCase()).not.toContain("kartoffeln");
+    expect(chips.categoryId).toBe("kartoffelchips_150g");
+
+    const bioMilk = parsed.items[1];
+    expect(bioMilk.expandedLabel.toLowerCase()).toBe("rewe bio vollmilch 1l");
+    expect(bioMilk.expandedLabel.toLowerCase()).not.toContain("beste wahl");
+    expect(bioMilk.categoryId).toBe("bio_vollmilch_1l");
+
+    const tabs = parsed.items[2];
+    expect(tabs.expandedLabel.toLowerCase()).toBe("spuelmaschinentabs 40st");
+    expect(tabs.expandedLabel.toLowerCase()).not.toContain("spülmittel");
+
+    const yoghurt = parsed.items[3];
+    expect(yoghurt.expandedLabel.toLowerCase()).toBe("milsani joghurt 500g");
+    expect(yoghurt.expandedLabel.toLowerCase()).not.toContain("ani joghurt urt");
+  });
 });
 
 describe("Open Prices Datenbank-Sync & Preiskonfidenz", () => {
-  it("persistiert Open-Prices-Angebote und -Beobachtungen idempotent in der DB", async () => {
+  it("persistiert Open-Prices-Angebote und -Beobachtungen idempotent in der DB und priorisiert Feed-Angebote", async () => {
     resetDbForTests();
     const db = await getDb();
     const mockFetch: typeof fetch = async (input) => {
@@ -335,6 +436,16 @@ describe("Open Prices Datenbank-Sync & Preiskonfidenz", () => {
             headers: { "Content-Type": "application/json" },
           },
         );
+      }
+      if (url.includes("feeds.example.test")) {
+        const csvFeed = [
+          "merchant_name,brand_name,product_name,search_price,description",
+          'Lidl.de,Kerrygold,"Original Irische Butter",1.39,"250 g Packung"',
+        ].join("\n");
+        return new Response(csvFeed, {
+          status: 200,
+          headers: { "Content-Type": "text/csv; charset=utf-8" },
+        });
       }
       return new Response(JSON.stringify({ items: SAMPLE_OPEN_PRICES_ITEMS }), {
         status: 200,
@@ -351,7 +462,8 @@ describe("Open Prices Datenbank-Sync & Preiskonfidenz", () => {
     });
     expect(run1.source).toBe("open_prices");
     expect(run1.openPricesMatchedCount).toBe(3);
-    expect(run1.openPricesOfferCount).toBeGreaterThanOrEqual(2);
+    // Nur die lokal rabattierte Butter der laufenden Woche wird ein Angebot (nicht Bananen/Milch)
+    expect(run1.openPricesOfferCount).toBe(1);
 
     // Zweiter Lauf darf [OP:...]-Beobachtungen nicht duplizieren
     await syncOffersForZipCode(db, {
@@ -361,6 +473,21 @@ describe("Open Prices Datenbank-Sync & Preiskonfidenz", () => {
       enableOpenPrices: true,
       fetchImpl: mockFetch,
     });
+
+    // Wenn ein externer Feed (OFFER_FEED_URL) bereits Lidl Butter liefert, verdrängt Open Prices ihn nicht
+    const feedRun = await syncOffersForZipCode(db, {
+      zipCode: "80331",
+      referenceDate: "2026-11-21",
+      feedUrl: "https://feeds.example.test/offers.csv",
+      enableLiveScraping: false,
+      enableOpenPrices: true,
+      fetchImpl: mockFetch,
+    });
+    expect(feedRun.source).toBe("remote_feed");
+    expect(feedRun.openPricesOfferCount).toBe(0);
+    expect(
+      feedRun.offers.some((o) => o.storeId === "lidl" && o.categoryId === "butter_250g" && o.priceCents === 139),
+    ).toBe(true);
 
     const opRows = await db
       .select()

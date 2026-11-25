@@ -185,7 +185,8 @@ export const BarcodeScannerPanel = ({
     setProduct(found);
     setSelectedCategoryId(found.categoryId ?? "");
     const preferredSighting =
-      sightings.find((s) => s.countryCode === "DE" && s.storeId != null) ?? sightings[0];
+      sightings.find((s) => s.countryCode === "DE" && s.storeId != null) ??
+      sightings.find((s) => s.countryCode === "DE");
     if (preferredSighting) {
       setPriceInput((preferredSighting.priceCents / 100).toFixed(2).replace(".", ","));
       if (preferredSighting.storeId) {

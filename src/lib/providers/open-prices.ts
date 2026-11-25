@@ -352,12 +352,13 @@ export const buildOpenPricesSyncArtifacts = (params: {
     });
 
     const locationSuffix = entry.city ? ` · ${entry.city}` : "";
-    const isCheaperThanDefault =
-      entry.packageUnit === cat.unit &&
-      Math.abs(entry.packageAmount - cat.standardAmount) <= Math.round(cat.standardAmount * 0.25) &&
-      effectiveCents < storeDefaultRegular;
+    const isCurrentWeekOffer =
+      entry.isDiscounted &&
+      entry.isLocal &&
+      entry.observedDate >= week.monday &&
+      entry.observedDate <= week.saturday;
 
-    if (entry.isDiscounted || isCheaperThanDefault) {
+    if (isCurrentWeekOffer) {
       offers.push({
         id: `openprices-${entry.storeId}-${entry.categoryId}-${params.zipCode}`,
         storeId: entry.storeId,
@@ -373,13 +374,14 @@ export const buildOpenPricesSyncArtifacts = (params: {
       });
     }
 
-    // Basispreis-Kalibrierung nur für nicht rabattierte Standardpackungen, damit teure
-    // Nischenmarken den Eigenmarken-Richtpreis nicht verzerren.
+    // Basispreis-Kalibrierung nur für lokale, nicht rabattierte Standardpackungen, damit
+    // weder überregionale Preisunterschiede noch teure Nischenmarken Richtpreise verzerren.
     const matchesStandardSize =
       entry.packageUnit === cat.unit &&
       Math.abs(entry.packageAmount - cat.standardAmount) <= Math.round(cat.standardAmount * 0.15);
 
     if (
+      entry.isLocal &&
       !entry.isDiscounted &&
       matchesStandardSize &&
       (entry.isStoreBrand || entry.priceCents <= Math.round(storeDefaultRegular * 1.15))

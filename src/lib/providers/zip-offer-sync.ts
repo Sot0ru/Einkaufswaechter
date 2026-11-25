@@ -123,6 +123,17 @@ export const syncOffersForZipCode = async (
     }
   }
 
+  // Externe Produktfeeds (OFFER_FEED_URL) haben Vorrang vor Open-Prices-Ergänzungen
+  if (fetched.source === "remote_feed") {
+    for (const offer of fetched.offers) {
+      const key = `${offer.storeId}:${offer.categoryId}`;
+      if (!coveredStoreCategories.has(key)) {
+        priorityOffers.push(offer);
+        coveredStoreCategories.add(key);
+      }
+    }
+  }
+
   if (openPricesResult && openPricesResult.source === "open_prices_live") {
     fetchedRawCount += openPricesResult.fetchedRawCount;
     openPricesMatchedCount = openPricesResult.matchedCount;
