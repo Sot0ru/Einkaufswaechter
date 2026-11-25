@@ -67,7 +67,11 @@ export const getPriceHistorySummary = async (
     const category = CATEGORY_MAP[row.categoryId];
     const packageAmount = row.packageAmount ?? category?.standardAmount ?? 0;
     const packageUnit = (row.packageUnit as BaseUnit | null) ?? category?.unit ?? "g";
-    const isBarcode = row.rawLabel.startsWith("[EAN:");
+    const obsSource: "barcode" | "open_prices" | "receipt" = row.rawLabel.startsWith("[EAN:")
+      ? "barcode"
+      : row.rawLabel.startsWith("[OP:")
+        ? "open_prices"
+        : "receipt";
 
     if (packageAmount > 0) {
       samples.push({
@@ -77,7 +81,7 @@ export const getPriceHistorySummary = async (
         packageAmount,
         packageUnit,
         observedDate: row.receiptDate,
-        source: isBarcode ? "barcode" : "receipt",
+        source: obsSource,
         isOffer: row.isOffer,
       });
     }
@@ -90,7 +94,7 @@ export const getPriceHistorySummary = async (
         storeId: row.storeId as StoreId,
         priceCents: row.priceCents,
         observedDate: row.receiptDate,
-        source: isBarcode ? "barcode" : "receipt",
+        source: obsSource,
         packageAmount: row.packageAmount ?? null,
         packageUnit: (row.packageUnit as BaseUnit | null) ?? null,
       };

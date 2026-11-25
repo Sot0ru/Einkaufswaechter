@@ -13,7 +13,9 @@ export const PriceConfidenceBadge = ({
   className?: string;
 }) => {
   const toneClass =
-    confidence.source === "live_scraped" || confidence.source === "receipt_verified"
+    confidence.source === "live_scraped" ||
+    confidence.source === "receipt_verified" ||
+    confidence.source === "open_prices"
       ? "border-route bg-paper text-route"
       : confidence.source === "user_calibrated"
         ? "border-ink bg-paper text-ink"

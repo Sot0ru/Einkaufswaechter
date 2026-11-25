@@ -2,6 +2,7 @@ import { NextResponse, connection } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { isValidBarcode, normalizeBarcode } from "@/lib/providers/barcode-lookup";
+import { fetchOpenPricesByBarcode } from "@/lib/providers/open-prices";
 import { STORES, type StoreId } from "@/lib/rules/catalog";
 import {
   lookupAndCacheBarcode,
@@ -54,12 +55,17 @@ export async function GET(request: Request) {
     }
 
     const db = await getDb();
-    const product = await lookupAndCacheBarcode(db, barcode);
+    const [product, openPrices] = await Promise.all([
+      lookupAndCacheBarcode(db, barcode),
+      fetchOpenPricesByBarcode(barcode),
+    ]);
+
     if (!product) {
       return NextResponse.json(
         {
           status: "not_found",
           barcode,
+          communityPrices: openPrices.sightings,
           message: "Produkt wurde in Open Food Facts nicht gefunden. Du kannst es manuell zuordnen.",
         },
         { status: 404 },
@@ -69,6 +75,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       status: "ok",
       product,
+      communityPrices: openPrices.sightings,
     });
   } catch (error) {
     return NextResponse.json(
