@@ -58,7 +58,7 @@ import type { CustomBasePricesMap } from "@/lib/services/base-prices";
 import type { SavedShoppingList } from "@/lib/services/shopping-lists";
 import { type AppTab, BottomNav, LegalFooter, SiteHeader } from "./AppChrome";
 import { type BarcodeSavePayload, BarcodeScannerPanel } from "./BarcodeScannerPanel";
-import { CompareView } from "./CompareView";
+import { type CompareStrategy, CompareView } from "./CompareView";
 import { FavoriteAlertsCard } from "./FavoriteAlertsCard";
 import { formatWeekday } from "./format";
 import { InStoreView } from "./InStoreView";
@@ -70,6 +70,7 @@ import { RecipesPanel } from "./RecipesPanel";
 import { SavedListsPanel } from "./SavedListsPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { type CustomBasketItem, ShoppingListView } from "./ShoppingListView";
+import { Drawer } from "./ui";
 import { useHouseholdShare } from "./useHouseholdShare";
 import { ZipOffersPanel } from "./ZipOffersPanel";
 
@@ -90,6 +91,7 @@ export interface ShoppingOptimizerAppProps {
   initialFavoriteCategoryIds?: string[];
   initialStoreDetourMinutes?: Partial<Record<StoreId, number>>;
   initialMinSavingsPerDetourMinuteCents?: number;
+  initialCustomComboStores?: StoreId[];
 }
 
 /** Abgehakt-Status gilt pro Kategorie, egal in welchem Markt sie auf der Route liegt */
@@ -134,8 +136,16 @@ export function ShoppingOptimizerApp({
   initialFavoriteCategoryIds = [],
   initialStoreDetourMinutes = {},
   initialMinSavingsPerDetourMinuteCents = DEFAULT_MIN_SAVINGS_PER_DETOUR_MINUTE_CENTS,
+  initialCustomComboStores,
 }: ShoppingOptimizerAppProps) {
   const [activeTab, setActiveTab] = useState<AppTab>("compare");
+  const [compareStrategy, setCompareStrategy] = useState<CompareStrategy>("auto");
+  const [customComboStores, setCustomComboStores] = useState<StoreId[]>(() =>
+    initialCustomComboStores && initialCustomComboStores.length >= 2
+      ? initialCustomComboStores
+      : ["lidl", "rewe"],
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [zipCode, setZipCode] = useState(initialZipCode);
   const [activeZipCode, setActiveZipCode] = useState(initialZipCode);
   const [zipSyncFeedback, setZipSyncFeedback] = useState<string | null>(null);
@@ -241,6 +251,7 @@ export function ShoppingOptimizerApp({
           secondStoreThresholdCents,
           enabledStores,
           enabledLoyaltyApps,
+          customComboStores,
           basketItems,
           customItems,
           checkedKeys,
@@ -261,6 +272,7 @@ export function ShoppingOptimizerApp({
     secondStoreThresholdCents,
     enabledStores,
     enabledLoyaltyApps,
+    customComboStores,
     basketItems,
     customItems,
     checkedKeys,
@@ -285,6 +297,7 @@ export function ShoppingOptimizerApp({
         customBasePrices,
         storeDetourMinutes,
         minSavingsPerDetourMinuteCents,
+        customComboStores,
       }),
     [
       basketItems,
@@ -296,6 +309,7 @@ export function ShoppingOptimizerApp({
       customBasePrices,
       storeDetourMinutes,
       minSavingsPerDetourMinuteCents,
+      customComboStores,
     ],
   );
 
@@ -382,6 +396,12 @@ export function ShoppingOptimizerApp({
 
   const toggleLoyaltyApp = (storeId: StoreId) => {
     setEnabledLoyaltyApps((prev) =>
+      prev.includes(storeId) ? prev.filter((id) => id !== storeId) : [...prev, storeId],
+    );
+  };
+
+  const toggleCustomComboStore = (storeId: StoreId) => {
+    setCustomComboStores((prev) =>
       prev.includes(storeId) ? prev.filter((id) => id !== storeId) : [...prev, storeId],
     );
   };
@@ -1321,7 +1341,7 @@ export function ShoppingOptimizerApp({
     );
   };
 
-  const renderFavoritesCard = (showEmptyStates: boolean) => (
+  const renderFavoritesCard = (showEmptyStates: boolean, embedded = true) => (
     <FavoriteAlertsCard
       summary={favoriteSummary}
       favoriteCount={favoriteCategoryIds.length}
@@ -1329,6 +1349,7 @@ export function ShoppingOptimizerApp({
       onAddAll={addFavoriteAlertsToBasket}
       onDownloadReminder={downloadFavoritesReminder}
       showEmptyStates={showEmptyStates}
+      embedded={embedded}
     />
   );
 
@@ -1441,13 +1462,13 @@ export function ShoppingOptimizerApp({
         activeZipCode={activeZipCode}
       />
 
-      <main className="mx-auto max-w-7xl px-4 pb-10 pt-8 sm:px-6 sm:pt-10 lg:px-10">
+      <main className="mx-auto max-w-7xl px-4 pb-10 pt-6 sm:px-6 sm:pt-8 lg:px-10">
         {household.shareNotice && (
           <div
             role="status"
-            className="mb-8 flex items-start justify-between gap-3 rounded-md border-2 border-route px-4 py-3 text-[15px]"
+            className="mx-auto mb-6 flex max-w-4xl items-start justify-between gap-3 rounded-lg border-2 border-route px-4 py-3 text-[15px]"
           >
-            <span className="pt-2.5">{household.shareNotice}</span>
+            <span className="pt-2">{household.shareNotice}</span>
             <button
               type="button"
               onClick={household.dismissShareNotice}
@@ -1458,25 +1479,46 @@ export function ShoppingOptimizerApp({
             </button>
           </div>
         )}
+
         {activeTab === "compare" && (
-          <div className="grid items-start gap-10 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-12">
-            <div className="min-w-0 lg:col-start-2 lg:row-start-1">
-              <CompareView
-                optimization={optimization}
-                offers={offers}
-                shoppingDate={shoppingDate}
-                priceHistory={priceHistory}
-                customBasePrices={customBasePrices}
-                nearbyStores={nearbyStores}
-                weekday={formatWeekday(shoppingDate)}
-                onStartRoute={startRoute}
-                onLoadPreset={() => loadPreset(DEFAULT_PRESET_ID)}
-                onOpenList={() => setActiveTab("list")}
-                favoritesCard={renderFavoritesCard(false)}
-              />
-            </div>
-            <div className="lg:col-start-1 lg:row-start-1">
+          <>
+            <CompareView
+              optimization={optimization}
+              offers={offers}
+              shoppingDate={shoppingDate}
+              isWeekendShopping={isWeekendShopping}
+              activeZipCode={activeZipCode}
+              region={currentRegion}
+              enabledStoresCount={enabledStores.length}
+              totalListCount={totalListCount}
+              strategy={compareStrategy}
+              onStrategyChange={setCompareStrategy}
+              customComboStores={customComboStores}
+              onToggleCustomComboStore={toggleCustomComboStore}
+              priceHistory={priceHistory}
+              customBasePrices={customBasePrices}
+              nearbyStores={nearbyStores}
+              isLoadingNearbyStores={isLoadingNearbyStores}
+              nearbyStoresFeedback={nearbyStoresFeedback}
+              onFetchNearbyStores={() => void fetchNearbyStores()}
+              weekday={formatWeekday(shoppingDate)}
+              onStartRoute={startRoute}
+              onLoadPreset={() => loadPreset(DEFAULT_PRESET_ID)}
+              onOpenList={() => setActiveTab("list")}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              favoriteAlertCount={favoriteSummary.alerts.length}
+              favoriteSavingsCents={favoriteSummary.totalSavingsCents}
+              favoritesCard={renderFavoritesCard(false, true)}
+            />
+
+            <Drawer
+              open={isSettingsOpen}
+              onClose={() => setIsSettingsOpen(false)}
+              title="Einstellungen"
+              subtitle={`PLZ ${activeZipCode} · ${currentRegion.regionLabel}`}
+            >
               <SettingsPanel
+                embedded
                 zipCode={zipCode}
                 onZipCodeChange={(value) => changeZipCode(value, true)}
                 region={currentRegion}
@@ -1506,8 +1548,8 @@ export function ShoppingOptimizerApp({
                   setNearbyStoresFeedback("Ermittelte OSM-Wegzeiten als Umwege übernommen.");
                 }}
               />
-            </div>
-          </div>
+            </Drawer>
+          </>
         )}
 
         {activeTab === "list" && (
@@ -1527,6 +1569,8 @@ export function ShoppingOptimizerApp({
             onChangePreference={changeItemPreference}
             favoriteIds={favoriteSet}
             onToggleFavorite={toggleFavorite}
+            savedListsCount={savedLists.length}
+            hasActiveShare={household.shareLink != null || household.shareStatus != null}
             recipesPanel={
               <RecipesPanel
                 scores={recipeScores}
@@ -1583,62 +1627,68 @@ export function ShoppingOptimizerApp({
         )}
 
         {activeTab === "offers" && (
-          <div className="flex flex-col gap-14">
-            {renderFavoritesCard(true)}
-            <ZipOffersPanel
-              zipCode={zipCode}
-              onZipCodeChange={(value) => changeZipCode(value, false)}
-              activeZipCode={activeZipCode}
-              region={currentRegion}
-              onFetchOffers={(zip) => void fetchZipOffers(zip)}
-              onFetchOpenPrices={() => void triggerOpenPricesFetch()}
-              onLiveScrape={() => void triggerLiveScrape()}
-              isSyncing={isSyncingZip}
-              isFetchingOpenPrices={isFetchingOpenPrices}
-              isLiveScraping={isLiveScraping}
-              feedback={zipSyncFeedback}
-              chainStatuses={chainScrapeStatuses}
-            />
-            <BarcodeScannerPanel
-              defaultStoreId={receiptFallbackStoreId}
-              activeZipCode={activeZipCode}
-              onSaveBarcodePrice={saveBarcodePrice}
-              feedback={barcodeFeedback}
-            />
-            <ReceiptImportPanel
-              receiptInput={receiptInput}
-              onReceiptInputChange={setReceiptInput}
-              preview={receiptPreview}
-              fallbackStoreId={receiptFallbackStoreId}
-              onFallbackStoreChange={setReceiptFallbackStoreId}
-              activeZipCode={activeZipCode}
-              shoppingDate={shoppingDate}
-              manualAssignments={manualReceiptAssignments}
-              onAssign={(alias, categoryId) =>
-                setManualReceiptAssignments((prev) => ({ ...prev, [alias]: categoryId }))
-              }
-              learnedAliasCount={receiptAliases.length}
-              isImporting={isImportingReceipt}
-              onImport={() => void applyReceiptImport()}
-              feedback={receiptFeedback}
-              reconciliation={reconciliationView}
-              onApplyReconciledPrices={applyReconciledPrices}
-            />
-            <OffersView
-              offers={offers}
-              weekWindow={weekWindow}
-              shoppingDate={shoppingDate}
-              priceHistory={priceHistory}
-              customBasePrices={customBasePrices}
-              importStoreId={importStoreId}
-              onImportStoreChange={setImportStoreId}
-              brochureInput={brochureInput}
-              onBrochureInputChange={setBrochureInput}
-              preview={brochurePreview}
-              feedback={importFeedback}
-              onApplyImport={applyBrochureImport}
-            />
-          </div>
+          <OffersView
+            offers={offers}
+            weekWindow={weekWindow}
+            shoppingDate={shoppingDate}
+            priceHistory={priceHistory}
+            customBasePrices={customBasePrices}
+            importStoreId={importStoreId}
+            onImportStoreChange={setImportStoreId}
+            brochureInput={brochureInput}
+            onBrochureInputChange={setBrochureInput}
+            preview={brochurePreview}
+            feedback={importFeedback}
+            onApplyImport={applyBrochureImport}
+            favoriteAlertCount={favoriteSummary.alerts.length}
+            favoriteSavingsCents={favoriteSummary.totalSavingsCents}
+            favoritesCard={renderFavoritesCard(true, true)}
+            zipOffersPanel={
+              <ZipOffersPanel
+                zipCode={zipCode}
+                onZipCodeChange={(value) => changeZipCode(value, false)}
+                activeZipCode={activeZipCode}
+                region={currentRegion}
+                onFetchOffers={(zip) => void fetchZipOffers(zip)}
+                onFetchOpenPrices={() => void triggerOpenPricesFetch()}
+                onLiveScrape={() => void triggerLiveScrape()}
+                isSyncing={isSyncingZip}
+                isFetchingOpenPrices={isFetchingOpenPrices}
+                isLiveScraping={isLiveScraping}
+                feedback={zipSyncFeedback}
+                chainStatuses={chainScrapeStatuses}
+              />
+            }
+            barcodeScannerPanel={
+              <BarcodeScannerPanel
+                defaultStoreId={receiptFallbackStoreId}
+                activeZipCode={activeZipCode}
+                onSaveBarcodePrice={saveBarcodePrice}
+                feedback={barcodeFeedback}
+              />
+            }
+            receiptImportPanel={
+              <ReceiptImportPanel
+                receiptInput={receiptInput}
+                onReceiptInputChange={setReceiptInput}
+                preview={receiptPreview}
+                fallbackStoreId={receiptFallbackStoreId}
+                onFallbackStoreChange={setReceiptFallbackStoreId}
+                activeZipCode={activeZipCode}
+                shoppingDate={shoppingDate}
+                manualAssignments={manualReceiptAssignments}
+                onAssign={(alias, categoryId) =>
+                  setManualReceiptAssignments((prev) => ({ ...prev, [alias]: categoryId }))
+                }
+                learnedAliasCount={receiptAliases.length}
+                isImporting={isImportingReceipt}
+                onImport={() => void applyReceiptImport()}
+                feedback={receiptFeedback}
+                reconciliation={reconciliationView}
+                onApplyReconciledPrices={applyReconciledPrices}
+              />
+            }
+          />
         )}
       </main>
 

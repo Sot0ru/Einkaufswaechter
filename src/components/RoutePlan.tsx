@@ -56,7 +56,8 @@ export const RoutePlan = ({ rows, footer }: RoutePlanProps) => {
   return (
     <section aria-labelledby="route-plan-title" className="overflow-hidden rounded-md border border-line">
       <h2 id="route-plan-title" className="sr-only">
-        Linienplan durch {rows.length > 1 ? "beide Märkte" : "den Markt"}
+        Linienplan durch{" "}
+        {rows.length > 2 ? `alle ${rows.length} Märkte` : rows.length === 2 ? "beide Märkte" : "den Markt"}
       </h2>
       <div className="overflow-x-auto">
         <div

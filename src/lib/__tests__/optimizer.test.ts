@@ -359,3 +359,222 @@ describe("Paket 6: Produkt-Präferenz, Vorratstipp und Umweg-Gewichtung", () => 
     });
   });
 });
+
+describe("Frei wählbare Supermarkt-Kombination (2 oder mehr Märkte)", () => {
+  const comboOffer = (
+    id: string,
+    storeId: OfferRecord["storeId"],
+    categoryId: string,
+    title: string,
+    priceCents: number,
+    packageAmount: number,
+    packageUnit: OfferRecord["packageUnit"] = "g",
+  ): OfferRecord => ({
+    id,
+    storeId,
+    categoryId,
+    title,
+    priceCents,
+    loyaltyPriceCents: null,
+    requiresLoyaltyApp: false,
+    packageAmount,
+    packageUnit,
+    validFrom: "2026-11-16",
+    validTo: "2026-11-21",
+  });
+
+  it("teilt einen Warenkorb optimal auf 2 frei gewählte Märkte (z. B. Aldi + Edeka) mit Hauptladen-Tie-Breaking auf", () => {
+    const offers: OfferRecord[] = [
+      comboOffer("edeka-butter", "edeka", "butter_250g", "Kerrygold Butter 250g", 139, 250),
+      comboOffer("aldi-kaffee", "aldi", "filterkaffee_500g", "Markus Kaffee 500g", 329, 500),
+      // Lidl wäre insgesamt noch günstiger, ist aber nicht in der gewählten Kombi
+      comboOffer("lidl-butter", "lidl", "butter_250g", "Milbona Butter 250g", 119, 250),
+      comboOffer("lidl-kaffee", "lidl", "filterkaffee_500g", "Bellarom Kaffee 500g", 299, 500),
+    ];
+
+    const result = optimizeShoppingBasket({
+      items: [
+        { categoryId: "vollmilch_1l", quantity: 2 }, // Gleich teuer bei Aldi & Edeka (0,99 €)
+        { categoryId: "pasta_500g", quantity: 2 }, // Gleich teuer bei Aldi & Edeka (0,79 €)
+        { categoryId: "filterkaffee_500g", quantity: 2 }, // Günstiger bei Aldi (3,29 €)
+        { categoryId: "butter_250g", quantity: 3 }, // Günstiger bei Edeka (1,39 €)
+      ],
+      enabledStores: ["lidl", "aldi", "edeka", "rewe"],
+      enabledLoyaltyApps: [],
+      shoppingDate: "2026-11-18",
+      offers,
+      customComboStores: ["aldi", "edeka"],
+    });
+
+    expect(result.customStoreCombo).not.toBeNull();
+    const combo = result.customStoreCombo!;
+    expect(combo.selectedStoreIds).toEqual(["aldi", "edeka"]);
+    expect(combo.primaryStoreId).toBe("aldi");
+    expect(combo.legs).toHaveLength(2);
+    expect(combo.legs[0].storeId).toBe("aldi");
+    expect(combo.legs[0].role).toBe("main");
+    expect(combo.legs[1].storeId).toBe("edeka");
+    expect(combo.legs[1].role).toBe("detour");
+
+    // Gleich teure Artikel (Milch & Pasta) bleiben zwingend im Hauptladen Aldi,
+    // nur die günstigere Butter landet im Zweitladen Edeka.
+    expect(combo.legs[1].items.map((i) => i.categoryId)).toEqual(["butter_250g"]);
+    expect(combo.legs[0].items.map((i) => i.categoryId)).toContain("vollmilch_1l");
+    expect(combo.legs[0].items.map((i) => i.categoryId)).toContain("pasta_500g");
+    expect(combo.legs[0].items.map((i) => i.categoryId)).toContain("filterkaffee_500g");
+
+    // Ersparnis gegenüber bestem Einzelmarkt innerhalb der Kombi (Aldi) ist positiv
+    expect(combo.savingsVsBestSingleInComboCents).toBeGreaterThan(0);
+    // Gesamtpreis ist höher als Lidl allein -> savingsVsOverallBestSingleCents ist negativ
+    expect(combo.savingsVsOverallBestSingleCents).toBeLessThan(0);
+    expect(combo.unusedStoreIds).toEqual([]);
+  });
+
+  it("unterstützt Kombinationen aus 3 Märkten und meldet ungenutzte Märkte sauber ohne leere Laufrouten-Beine", () => {
+    const offers: OfferRecord[] = [
+      comboOffer("lidl-kaffee", "lidl", "filterkaffee_500g", "Bellarom Kaffee 500g", 329, 500),
+      comboOffer("rewe-butter", "rewe", "butter_250g", "Kerrygold Butter 250g", 139, 250),
+      comboOffer("edeka-eier", "edeka", "eier_10st", "Edeka Eier 10er", 149, 10, "stueck"),
+    ];
+
+    const threeStoreResult = optimizeShoppingBasket({
+      items: [
+        { categoryId: "vollmilch_1l", quantity: 1 },
+        { categoryId: "pasta_500g", quantity: 1 },
+        { categoryId: "filterkaffee_500g", quantity: 1 },
+        { categoryId: "butter_250g", quantity: 1 },
+        { categoryId: "eier_10st", quantity: 1 },
+      ],
+      enabledStores: ["lidl", "rewe", "edeka"],
+      enabledLoyaltyApps: [],
+      shoppingDate: "2026-11-18",
+      offers,
+      customComboStores: ["lidl", "rewe", "edeka"],
+    });
+
+    const combo3 = threeStoreResult.customStoreCombo!;
+    expect(combo3.legs).toHaveLength(3);
+    expect(combo3.unusedStoreIds).toEqual([]);
+    expect(combo3.legs.map((leg) => leg.storeId)).toContain("lidl");
+    expect(combo3.legs.map((leg) => leg.storeId)).toContain("rewe");
+    expect(combo3.legs.map((leg) => leg.storeId)).toContain("edeka");
+    expect(combo3.savingsVsOverallBestSingleCents).toBeGreaterThan(0);
+
+    // Wenn ein 4. Markt (Penny) keinen günstigeren Artikel hat, bleibt er in unusedStoreIds
+    const withUnusedResult = optimizeShoppingBasket({
+      items: [
+        { categoryId: "vollmilch_1l", quantity: 1 },
+        { categoryId: "filterkaffee_500g", quantity: 1 },
+      ],
+      enabledStores: ["lidl"],
+      enabledLoyaltyApps: [],
+      shoppingDate: "2026-11-18",
+      offers: [comboOffer("lidl-kaffee", "lidl", "filterkaffee_500g", "Bellarom Kaffee 500g", 329, 500)],
+      // Penny ist nicht einmal in enabledStores und hat trotzdem keinen Vorteil -> sauber aufgelöst & unused
+      customComboStores: ["lidl", "penny"],
+    });
+
+    const unusedCombo = withUnusedResult.customStoreCombo!;
+    expect(unusedCombo.legs).toHaveLength(1);
+    expect(unusedCombo.legs[0].storeId).toBe("lidl");
+    expect(unusedCombo.unusedStoreIds).toEqual(["penny"]);
+  });
+
+  it("übernimmt die gewählte eigene Kombination über resolvePlan direkt in die Im-Laden-Laufroute", async () => {
+    const { resolvePlan } = await import("@/components/plan");
+    const offers: OfferRecord[] = [
+      comboOffer("rewe-butter", "rewe", "butter_250g", "Kerrygold Butter 250g", 139, 250),
+      comboOffer("lidl-kaffee", "lidl", "filterkaffee_500g", "Bellarom Kaffee 500g", 329, 500),
+      comboOffer("edeka-eier", "edeka", "eier_10st", "Edeka Eier 10er", 149, 10, "stueck"),
+    ];
+
+    const optimization = optimizeShoppingBasket({
+      items: [
+        { categoryId: "vollmilch_1l", quantity: 1 },
+        { categoryId: "filterkaffee_500g", quantity: 1 },
+        { categoryId: "butter_250g", quantity: 1 },
+        { categoryId: "eier_10st", quantity: 1 },
+      ],
+      enabledStores: ["lidl", "rewe", "edeka"],
+      enabledLoyaltyApps: [],
+      shoppingDate: "2026-11-18",
+      offers,
+      customComboStores: ["lidl", "rewe", "edeka"],
+    });
+
+    const plan = resolvePlan(optimization, "custom");
+    expect(plan).not.toBeNull();
+    expect(plan?.kind).toBe("custom");
+    expect(plan?.totalCents).toBe(optimization.customStoreCombo!.totalCheckoutCents);
+    expect(plan?.legs).toHaveLength(3);
+    expect(plan?.legs[0].role).toBe("main");
+    expect(plan?.legs[1].role).toBe("detour");
+    expect(plan?.legs[2].role).toBe("detour");
+  });
+
+  it("wählt pro Artikelzeile höchstens 1 Haupt-Badge mit klarer Priorität", async () => {
+    const { resolvePrimaryItemBadge, resolvePrimaryOfferBadge } = await import(
+      "@/components/PriceBadges"
+    );
+
+    // Normalpreis-Artikel bleibt ohne Badge ruhig
+    expect(
+      resolvePrimaryItemBadge({
+        isOffer: false,
+        usedLoyaltyApp: false,
+        loyaltyAppName: null,
+        deal: null,
+      }),
+    ).toBeNull();
+
+    // App-Hinweis hat höchste Priorität an der Kasse
+    expect(
+      resolvePrimaryItemBadge({
+        isOffer: true,
+        usedLoyaltyApp: true,
+        loyaltyAppName: "Lidl Plus",
+        deal: {
+          rating: "top_deal",
+          label: "Echter Tiefstpreis",
+          savingsPercentVsRegular: 35,
+          isHistoricLow: true,
+          unitPriceCents: 596,
+          referenceUnitPriceCents: 956,
+          shrinkflationWarning: null,
+        },
+      })?.label,
+    ).toBe("Mit Lidl Plus");
+
+    // In der Angebotsliste sticht Tiefstpreis vor „ab Donnerstag“
+    expect(
+      resolvePrimaryOfferBadge({
+        startsThursday: true,
+        deal: {
+          rating: "top_deal",
+          label: "Echter Tiefstpreis",
+          savingsPercentVsRegular: 30,
+          isHistoricLow: true,
+          unitPriceCents: 596,
+          referenceUnitPriceCents: 956,
+          shrinkflationWarning: null,
+        },
+      })?.label,
+    ).toBe("Echter Tiefstpreis");
+
+    // Fairer Deal ab Donnerstag zeigt genau ein „ab Donnerstag“-Badge
+    expect(
+      resolvePrimaryOfferBadge({
+        startsThursday: true,
+        deal: {
+          rating: "fair",
+          label: "Normalpreis",
+          savingsPercentVsRegular: 0,
+          isHistoricLow: false,
+          unitPriceCents: 956,
+          referenceUnitPriceCents: 956,
+          shrinkflationWarning: null,
+        },
+      })?.label,
+    ).toBe("ab Donnerstag");
+  });
+});
