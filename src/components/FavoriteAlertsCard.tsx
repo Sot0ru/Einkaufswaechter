@@ -11,6 +11,8 @@ interface FavoriteAlertsCardProps {
   onDownloadReminder: () => void;
   /** Hinweise anzeigen, wenn noch keine Stammprodukte markiert sind bzw. keines im Angebot ist */
   showEmptyStates?: boolean;
+  /** Ohne eigenen Karten-Rahmen, wenn bereits in CollapsibleCard eingebettet */
+  embedded?: boolean;
 }
 
 /** Wochen-Radar: Stammprodukte, die diese Woche im Angebot sind */
@@ -21,20 +23,26 @@ export const FavoriteAlertsCard = ({
   onAddAll,
   onDownloadReminder,
   showEmptyStates = false,
+  embedded = false,
 }: FavoriteAlertsCardProps) => {
   const count = summary.alerts.length;
 
   if (count === 0) {
     if (!showEmptyStates) return null;
     return (
-      <section aria-labelledby="favorites-title" className="rounded-md border border-line p-5">
-        <h2 id="favorites-title" className="flex items-center gap-2 text-xl font-black">
-          <StarIcon className="size-5 text-route" filled={favoriteCount > 0} />
-          Deine Stammprodukte
-        </h2>
-        <p className="mt-1.5 text-[15px]">
+      <section
+        aria-labelledby={embedded ? undefined : "favorites-title"}
+        className={embedded ? undefined : "rounded-md border border-line p-5"}
+      >
+        {!embedded && (
+          <h2 id="favorites-title" className="flex items-center gap-2 text-xl font-black">
+            <StarIcon className="size-5 text-route" filled={favoriteCount > 0} />
+            Deine Stammprodukte
+          </h2>
+        )}
+        <p className={embedded ? "text-sm text-muted" : "mt-1.5 text-[15px]"}>
           {favoriteCount === 0
-            ? "Markiere in der Einkaufsliste Produkte mit dem Stern. Dann siehst du hier jede Woche, welche davon im Angebot sind."
+            ? "Markiere in der Einkaufsliste Produkte als Stammprodukt. Dann siehst du hier jede Woche, welche davon im Angebot sind."
             : `Keines deiner ${favoriteCount} Stammprodukte ist diese Woche im Angebot.`}
         </p>
         {favoriteCount > 0 && (
@@ -49,14 +57,19 @@ export const FavoriteAlertsCard = ({
   const missingFromBasket = summary.alerts.filter((alert) => !basketCategoryIds.has(alert.categoryId)).length;
 
   return (
-    <section aria-labelledby="favorites-title" className="rounded-md bg-panel p-5">
-      <h2 id="favorites-title" className="flex items-start gap-2 text-xl leading-tight font-black">
-        <StarIcon className="mt-0.5 size-5 flex-none text-route" filled />
-        {count === 1
-          ? "Eines deiner Stammprodukte ist diese Woche im Angebot"
-          : `${count} deiner Stammprodukte sind diese Woche im Angebot`}
-      </h2>
-      <p className="mt-1 text-[15px]">
+    <section
+      aria-labelledby={embedded ? undefined : "favorites-title"}
+      className={embedded ? undefined : "rounded-md bg-panel p-5"}
+    >
+      {!embedded && (
+        <h2 id="favorites-title" className="flex items-start gap-2 text-xl leading-tight font-black">
+          <StarIcon className="mt-0.5 size-5 flex-none text-route" filled />
+          {count === 1
+            ? "Eines deiner Stammprodukte ist diese Woche im Angebot"
+            : `${count} deiner Stammprodukte sind diese Woche im Angebot`}
+        </h2>
+      )}
+      <p className={embedded ? "text-sm text-muted" : "mt-1 text-[15px]"}>
         Zusammen {formatEuroCents(summary.totalSavingsCents)} günstiger als zum Normalpreis.
       </p>
       <ul className="mt-3 divide-y divide-line-strong">

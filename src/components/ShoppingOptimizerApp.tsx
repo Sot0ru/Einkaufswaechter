@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChainScrapeStatus } from "@/lib/providers/chain-scrapers";
 import type { WeekWindow } from "@/lib/providers/demo-offers";
 import {
+  fetchOpenPricesForZip,
+  type OpenPricesBaseCalibration,
+} from "@/lib/providers/open-prices";
+import {
   SAMPLE_RECEIPT_TEXT,
   buildOfferRecordFromReceiptItem,
   normalizeReceiptLabel,
@@ -48,12 +52,13 @@ import {
   buildVerifiedKey,
   type PriceHistorySample,
   type PriceHistorySummary,
+  type VerifiedPriceRecord,
 } from "@/lib/rules/price-intelligence";
 import type { CustomBasePricesMap } from "@/lib/services/base-prices";
 import type { SavedShoppingList } from "@/lib/services/shopping-lists";
 import { type AppTab, BottomNav, LegalFooter, SiteHeader } from "./AppChrome";
 import { type BarcodeSavePayload, BarcodeScannerPanel } from "./BarcodeScannerPanel";
-import { CompareView } from "./CompareView";
+import { type CompareStrategy, CompareView } from "./CompareView";
 import { FavoriteAlertsCard } from "./FavoriteAlertsCard";
 import { formatWeekday } from "./format";
 import { InStoreView } from "./InStoreView";
@@ -65,6 +70,7 @@ import { RecipesPanel } from "./RecipesPanel";
 import { SavedListsPanel } from "./SavedListsPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { type CustomBasketItem, ShoppingListView } from "./ShoppingListView";
+import { Drawer } from "./ui";
 import { useHouseholdShare } from "./useHouseholdShare";
 import { ZipOffersPanel } from "./ZipOffersPanel";
 
@@ -85,6 +91,7 @@ export interface ShoppingOptimizerAppProps {
   initialFavoriteCategoryIds?: string[];
   initialStoreDetourMinutes?: Partial<Record<StoreId, number>>;
   initialMinSavingsPerDetourMinuteCents?: number;
+  initialCustomComboStores?: StoreId[];
 }
 
 /** Abgehakt-Status gilt pro Kategorie, egal in welchem Markt sie auf der Route liegt */
@@ -129,12 +136,21 @@ export function ShoppingOptimizerApp({
   initialFavoriteCategoryIds = [],
   initialStoreDetourMinutes = {},
   initialMinSavingsPerDetourMinuteCents = DEFAULT_MIN_SAVINGS_PER_DETOUR_MINUTE_CENTS,
+  initialCustomComboStores,
 }: ShoppingOptimizerAppProps) {
   const [activeTab, setActiveTab] = useState<AppTab>("compare");
+  const [compareStrategy, setCompareStrategy] = useState<CompareStrategy>("auto");
+  const [customComboStores, setCustomComboStores] = useState<StoreId[]>(() =>
+    initialCustomComboStores && initialCustomComboStores.length >= 2
+      ? initialCustomComboStores
+      : ["lidl", "rewe"],
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [zipCode, setZipCode] = useState(initialZipCode);
   const [activeZipCode, setActiveZipCode] = useState(initialZipCode);
   const [zipSyncFeedback, setZipSyncFeedback] = useState<string | null>(null);
   const [isSyncingZip, setIsSyncingZip] = useState(false);
+  const [isFetchingOpenPrices, setIsFetchingOpenPrices] = useState(false);
   const [isLiveScraping, setIsLiveScraping] = useState(false);
   const [chainScrapeStatuses, setChainScrapeStatuses] = useState<ChainScrapeStatus[]>([]);
   // Standardmäßig Samstag, damit auch die Donnerstags-Angebote einfließen
@@ -235,6 +251,7 @@ export function ShoppingOptimizerApp({
           secondStoreThresholdCents,
           enabledStores,
           enabledLoyaltyApps,
+          customComboStores,
           basketItems,
           customItems,
           checkedKeys,
@@ -255,6 +272,7 @@ export function ShoppingOptimizerApp({
     secondStoreThresholdCents,
     enabledStores,
     enabledLoyaltyApps,
+    customComboStores,
     basketItems,
     customItems,
     checkedKeys,
@@ -279,6 +297,7 @@ export function ShoppingOptimizerApp({
         customBasePrices,
         storeDetourMinutes,
         minSavingsPerDetourMinuteCents,
+        customComboStores,
       }),
     [
       basketItems,
@@ -290,6 +309,7 @@ export function ShoppingOptimizerApp({
       customBasePrices,
       storeDetourMinutes,
       minSavingsPerDetourMinuteCents,
+      customComboStores,
     ],
   );
 
@@ -376,6 +396,12 @@ export function ShoppingOptimizerApp({
 
   const toggleLoyaltyApp = (storeId: StoreId) => {
     setEnabledLoyaltyApps((prev) =>
+      prev.includes(storeId) ? prev.filter((id) => id !== storeId) : [...prev, storeId],
+    );
+  };
+
+  const toggleCustomComboStore = (storeId: StoreId) => {
+    setCustomComboStores((prev) =>
       prev.includes(storeId) ? prev.filter((id) => id !== storeId) : [...prev, storeId],
     );
   };
@@ -809,6 +835,152 @@ export function ShoppingOptimizerApp({
     }
   };
 
+  const applyOpenPricesClientData = (params: {
+    newOffers?: readonly OfferRecord[];
+    baseCalibrations?: readonly OpenPricesBaseCalibration[];
+    verifiedPrices?: readonly VerifiedPriceRecord[];
+    replaceAllOffers?: readonly OfferRecord[];
+  }) => {
+    if (params.replaceAllOffers && params.replaceAllOffers.length > 0) {
+      setOffers([...params.replaceAllOffers]);
+    } else if (params.newOffers && params.newOffers.length > 0) {
+      const incoming = params.newOffers;
+      setOffers((prev) => [
+        ...incoming,
+        ...prev.filter(
+          (existing) =>
+            !incoming.some(
+              (o) => o.storeId === existing.storeId && o.categoryId === existing.categoryId,
+            ),
+        ),
+      ]);
+    }
+
+    if (params.baseCalibrations && params.baseCalibrations.length > 0) {
+      const calibrations = params.baseCalibrations;
+      setCustomBasePrices((prev) => {
+        const next: CustomBasePricesMap = { ...prev };
+        for (const cal of calibrations) {
+          const existing = next[cal.categoryId]?.[cal.storeId];
+          // Eigene manuelle Nutzer-Preisanpassungen niemals überschreiben
+          if (existing && !existing.productLabel.includes("(Open Prices")) continue;
+          next[cal.categoryId] = {
+            ...(next[cal.categoryId] ?? {}),
+            [cal.storeId]: {
+              priceCents: cal.priceCents,
+              productLabel: cal.productLabel,
+            },
+          };
+        }
+        return next;
+      });
+    }
+
+    if (params.verifiedPrices && params.verifiedPrices.length > 0) {
+      const verified = params.verifiedPrices;
+      setPriceHistory((prev) => {
+        const nextVerified = { ...prev.verifiedPrices };
+        for (const record of verified) {
+          const key = buildVerifiedKey(record.categoryId, record.storeId);
+          const existing = nextVerified[key];
+          // Frischere eigene Bon-/Barcode-Scans bleiben immer erhalten
+          if (
+            existing &&
+            existing.source !== "open_prices" &&
+            existing.observedDate >= record.observedDate
+          ) {
+            continue;
+          }
+          nextVerified[key] = record;
+        }
+        return { ...prev, verifiedPrices: nextVerified };
+      });
+    }
+  };
+
+  const triggerOpenPricesFetch = async () => {
+    const candidateZip = zipCode.trim();
+    if (!isValidGermanZip(candidateZip)) {
+      setZipSyncFeedback(INVALID_ZIP_MESSAGE);
+      return;
+    }
+
+    setIsFetchingOpenPrices(true);
+    setZipSyncFeedback("Echte Community-Preise werden über Open Prices (Open Food Facts) geladen…");
+
+    if (candidateZip !== activeZipCode) {
+      setNearbyStores(null);
+      setNearbyStoresFeedback(null);
+    }
+    setActiveZipCode(candidateZip);
+
+    // 1. Server-Sync versuchen (inkl. DB-Speicherung & Preishistorie)
+    try {
+      const response = await fetch(
+        `/api/v1/offers/open-prices?zipCode=${encodeURIComponent(candidateZip)}&date=${encodeURIComponent(shoppingDate)}`,
+      );
+      if (response.ok) {
+        const data = await response.json();
+        applyOpenPricesClientData({
+          replaceAllOffers: Array.isArray(data.offers) ? data.offers : undefined,
+          baseCalibrations: Array.isArray(data.openPricesBaseCalibrations)
+            ? data.openPricesBaseCalibrations
+            : undefined,
+          verifiedPrices: Array.isArray(data.openPricesVerifiedPrices)
+            ? data.openPricesVerifiedPrices
+            : undefined,
+        });
+        if (data.priceHistory) {
+          setPriceHistory(data.priceHistory);
+        }
+        const matched = Number(data.openPricesMatchedCount ?? 0);
+        const localCount = Number(data.openPricesLocalCount ?? 0);
+        const offerCount = Number(data.openPricesOfferCount ?? 0);
+        const calCount = Array.isArray(data.openPricesBaseCalibrations)
+          ? data.openPricesBaseCalibrations.length
+          : 0;
+        setZipSyncFeedback(
+          matched > 0
+            ? `Open Prices geladen (PLZ ${candidateZip}): ${matched} echte Marktpreise zugeordnet (${localCount} lokal, ${offerCount} Angebote, ${calCount} Basispreis-Kalibrierungen).`
+            : `Open Prices für PLZ ${candidateZip} abgefragt, aktuell keine passenden neuen Einträge – Regionalkatalog bleibt aktiv.`,
+        );
+        return;
+      }
+    } catch {
+      // Statische PWA / kein Server -> direkter CORS-Abruf im Browser
+    } finally {
+      setIsFetchingOpenPrices(false);
+    }
+
+    // 2. Direkter Browser-Abruf (CORS-fähig – funktioniert auch auf GitHub Pages!)
+    setIsFetchingOpenPrices(true);
+    try {
+      const live = await fetchOpenPricesForZip({
+        zipCode: candidateZip,
+        referenceDate: shoppingDate,
+        stores: enabledStores,
+      });
+      if (live.source === "open_prices_live") {
+        applyOpenPricesClientData({
+          newOffers: live.offers,
+          baseCalibrations: live.baseCalibrations,
+          verifiedPrices: live.verifiedPrices,
+        });
+        setZipSyncFeedback(
+          live.matchedCount > 0
+            ? `Open Prices direkt im Browser geladen (PLZ ${candidateZip}): ${live.matchedCount} echte Marktpreise (${live.localMatchedCount} lokal, ${live.offers.length} Angebote, ${live.baseCalibrations.length} Basispreis-Updates).`
+            : `Open Prices für PLZ ${candidateZip} erreicht (${live.fetchedRawCount} Einträge geprüft), keine neuen Kategorietreffer – Regionalkatalog bleibt aktiv.`,
+        );
+      } else {
+        setZipSyncFeedback(
+          "Open Prices ist derzeit offline nicht erreichbar. Der deterministische Regionalkatalog bleibt aktiv.",
+        );
+      }
+    } finally {
+      setIsFetchingOpenPrices(false);
+    }
+  };
+
   const triggerLiveScrape = async () => {
     const candidateZip = zipCode.trim();
     if (!isValidGermanZip(candidateZip)) {
@@ -831,9 +1003,15 @@ export function ShoppingOptimizerApp({
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data.offers) && data.offers.length > 0) {
-          setOffers(data.offers);
-        }
+        applyOpenPricesClientData({
+          replaceAllOffers: Array.isArray(data.offers) ? data.offers : undefined,
+          baseCalibrations: Array.isArray(data.openPricesBaseCalibrations)
+            ? data.openPricesBaseCalibrations
+            : undefined,
+          verifiedPrices: Array.isArray(data.openPricesVerifiedPrices)
+            ? data.openPricesVerifiedPrices
+            : undefined,
+        });
         if (Array.isArray(data.chainStatuses)) {
           setChainScrapeStatuses(data.chainStatuses);
         }
@@ -842,21 +1020,22 @@ export function ShoppingOptimizerApp({
           setNearbyStoresFeedback(null);
         }
         setActiveZipCode(candidateZip);
+        const opCount = Number(data.openPricesMatchedCount ?? 0);
+        const opSuffix =
+          opCount > 0 ? ` + ${opCount} echte Open-Prices-Beobachtungen` : "";
         setZipSyncFeedback(
-          `Live-Abruf abgeschlossen: ${data.liveChainCount ?? 0} Ketten live erreicht, ${data.liveScrapedOfferCount ?? 0} Live-Treffer, insgesamt ${data.offers?.length ?? offers.length} Angebote für PLZ ${candidateZip}.`,
+          `Live-Abruf abgeschlossen: ${data.liveChainCount ?? 0} Ketten live erreicht, ${data.liveScrapedOfferCount ?? 0} Live-Treffer${opSuffix}, insgesamt ${data.offers?.length ?? offers.length} Angebote für PLZ ${candidateZip}.`,
         );
         return;
       }
-      setZipSyncFeedback(
-        "Der Live-Abruf braucht den Server (/api/v1/offers/scrape). Bis dahin gilt der Regionalkatalog.",
-      );
     } catch {
-      setZipSyncFeedback(
-        "Ohne Serververbindung ist kein Live-Abruf möglich. Der Regionalkatalog bleibt aktiv.",
-      );
+      // Ohne Serververbindung: Fallback auf CORS-fähiges Open Prices direkt im Browser
     } finally {
       setIsLiveScraping(false);
     }
+
+    // Statische PWA ohne Backend-Server: automatisch Open Prices direkt im Browser abrufen
+    await triggerOpenPricesFetch();
   };
 
   /** Speichert die Liste; liefert die Server-ID oder null, wenn nur lokal gespeichert wurde */
@@ -1162,7 +1341,7 @@ export function ShoppingOptimizerApp({
     );
   };
 
-  const renderFavoritesCard = (showEmptyStates: boolean) => (
+  const renderFavoritesCard = (showEmptyStates: boolean, embedded = true) => (
     <FavoriteAlertsCard
       summary={favoriteSummary}
       favoriteCount={favoriteCategoryIds.length}
@@ -1170,6 +1349,7 @@ export function ShoppingOptimizerApp({
       onAddAll={addFavoriteAlertsToBasket}
       onDownloadReminder={downloadFavoritesReminder}
       showEmptyStates={showEmptyStates}
+      embedded={embedded}
     />
   );
 
@@ -1282,13 +1462,13 @@ export function ShoppingOptimizerApp({
         activeZipCode={activeZipCode}
       />
 
-      <main className="mx-auto max-w-7xl px-4 pb-10 pt-8 sm:px-6 sm:pt-10 lg:px-10">
+      <main className="mx-auto max-w-7xl px-4 pb-10 pt-6 sm:px-6 sm:pt-8 lg:px-10">
         {household.shareNotice && (
           <div
             role="status"
-            className="mb-8 flex items-start justify-between gap-3 rounded-md border-2 border-route px-4 py-3 text-[15px]"
+            className="mx-auto mb-6 flex max-w-4xl items-start justify-between gap-3 rounded-lg border-2 border-route px-4 py-3 text-[15px]"
           >
-            <span className="pt-2.5">{household.shareNotice}</span>
+            <span className="pt-2">{household.shareNotice}</span>
             <button
               type="button"
               onClick={household.dismissShareNotice}
@@ -1299,25 +1479,46 @@ export function ShoppingOptimizerApp({
             </button>
           </div>
         )}
+
         {activeTab === "compare" && (
-          <div className="grid items-start gap-10 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-12">
-            <div className="min-w-0 lg:col-start-2 lg:row-start-1">
-              <CompareView
-                optimization={optimization}
-                offers={offers}
-                shoppingDate={shoppingDate}
-                priceHistory={priceHistory}
-                customBasePrices={customBasePrices}
-                nearbyStores={nearbyStores}
-                weekday={formatWeekday(shoppingDate)}
-                onStartRoute={startRoute}
-                onLoadPreset={() => loadPreset(DEFAULT_PRESET_ID)}
-                onOpenList={() => setActiveTab("list")}
-                favoritesCard={renderFavoritesCard(false)}
-              />
-            </div>
-            <div className="lg:col-start-1 lg:row-start-1">
+          <>
+            <CompareView
+              optimization={optimization}
+              offers={offers}
+              shoppingDate={shoppingDate}
+              isWeekendShopping={isWeekendShopping}
+              activeZipCode={activeZipCode}
+              region={currentRegion}
+              enabledStoresCount={enabledStores.length}
+              totalListCount={totalListCount}
+              strategy={compareStrategy}
+              onStrategyChange={setCompareStrategy}
+              customComboStores={customComboStores}
+              onToggleCustomComboStore={toggleCustomComboStore}
+              priceHistory={priceHistory}
+              customBasePrices={customBasePrices}
+              nearbyStores={nearbyStores}
+              isLoadingNearbyStores={isLoadingNearbyStores}
+              nearbyStoresFeedback={nearbyStoresFeedback}
+              onFetchNearbyStores={() => void fetchNearbyStores()}
+              weekday={formatWeekday(shoppingDate)}
+              onStartRoute={startRoute}
+              onLoadPreset={() => loadPreset(DEFAULT_PRESET_ID)}
+              onOpenList={() => setActiveTab("list")}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              favoriteAlertCount={favoriteSummary.alerts.length}
+              favoriteSavingsCents={favoriteSummary.totalSavingsCents}
+              favoritesCard={renderFavoritesCard(false, true)}
+            />
+
+            <Drawer
+              open={isSettingsOpen}
+              onClose={() => setIsSettingsOpen(false)}
+              title="Einstellungen"
+              subtitle={`PLZ ${activeZipCode} · ${currentRegion.regionLabel}`}
+            >
               <SettingsPanel
+                embedded
                 zipCode={zipCode}
                 onZipCodeChange={(value) => changeZipCode(value, true)}
                 region={currentRegion}
@@ -1347,8 +1548,8 @@ export function ShoppingOptimizerApp({
                   setNearbyStoresFeedback("Ermittelte OSM-Wegzeiten als Umwege übernommen.");
                 }}
               />
-            </div>
-          </div>
+            </Drawer>
+          </>
         )}
 
         {activeTab === "list" && (
@@ -1368,6 +1569,8 @@ export function ShoppingOptimizerApp({
             onChangePreference={changeItemPreference}
             favoriteIds={favoriteSet}
             onToggleFavorite={toggleFavorite}
+            savedListsCount={savedLists.length}
+            hasActiveShare={household.shareLink != null || household.shareStatus != null}
             recipesPanel={
               <RecipesPanel
                 scores={recipeScores}
@@ -1424,60 +1627,68 @@ export function ShoppingOptimizerApp({
         )}
 
         {activeTab === "offers" && (
-          <div className="flex flex-col gap-14">
-            {renderFavoritesCard(true)}
-            <ZipOffersPanel
-              zipCode={zipCode}
-              onZipCodeChange={(value) => changeZipCode(value, false)}
-              activeZipCode={activeZipCode}
-              region={currentRegion}
-              onFetchOffers={(zip) => void fetchZipOffers(zip)}
-              onLiveScrape={() => void triggerLiveScrape()}
-              isSyncing={isSyncingZip}
-              isLiveScraping={isLiveScraping}
-              feedback={zipSyncFeedback}
-              chainStatuses={chainScrapeStatuses}
-            />
-            <BarcodeScannerPanel
-              defaultStoreId={receiptFallbackStoreId}
-              activeZipCode={activeZipCode}
-              onSaveBarcodePrice={saveBarcodePrice}
-              feedback={barcodeFeedback}
-            />
-            <ReceiptImportPanel
-              receiptInput={receiptInput}
-              onReceiptInputChange={setReceiptInput}
-              preview={receiptPreview}
-              fallbackStoreId={receiptFallbackStoreId}
-              onFallbackStoreChange={setReceiptFallbackStoreId}
-              activeZipCode={activeZipCode}
-              shoppingDate={shoppingDate}
-              manualAssignments={manualReceiptAssignments}
-              onAssign={(alias, categoryId) =>
-                setManualReceiptAssignments((prev) => ({ ...prev, [alias]: categoryId }))
-              }
-              learnedAliasCount={receiptAliases.length}
-              isImporting={isImportingReceipt}
-              onImport={() => void applyReceiptImport()}
-              feedback={receiptFeedback}
-              reconciliation={reconciliationView}
-              onApplyReconciledPrices={applyReconciledPrices}
-            />
-            <OffersView
-              offers={offers}
-              weekWindow={weekWindow}
-              shoppingDate={shoppingDate}
-              priceHistory={priceHistory}
-              customBasePrices={customBasePrices}
-              importStoreId={importStoreId}
-              onImportStoreChange={setImportStoreId}
-              brochureInput={brochureInput}
-              onBrochureInputChange={setBrochureInput}
-              preview={brochurePreview}
-              feedback={importFeedback}
-              onApplyImport={applyBrochureImport}
-            />
-          </div>
+          <OffersView
+            offers={offers}
+            weekWindow={weekWindow}
+            shoppingDate={shoppingDate}
+            priceHistory={priceHistory}
+            customBasePrices={customBasePrices}
+            importStoreId={importStoreId}
+            onImportStoreChange={setImportStoreId}
+            brochureInput={brochureInput}
+            onBrochureInputChange={setBrochureInput}
+            preview={brochurePreview}
+            feedback={importFeedback}
+            onApplyImport={applyBrochureImport}
+            favoriteAlertCount={favoriteSummary.alerts.length}
+            favoriteSavingsCents={favoriteSummary.totalSavingsCents}
+            favoritesCard={renderFavoritesCard(true, true)}
+            zipOffersPanel={
+              <ZipOffersPanel
+                zipCode={zipCode}
+                onZipCodeChange={(value) => changeZipCode(value, false)}
+                activeZipCode={activeZipCode}
+                region={currentRegion}
+                onFetchOffers={(zip) => void fetchZipOffers(zip)}
+                onFetchOpenPrices={() => void triggerOpenPricesFetch()}
+                onLiveScrape={() => void triggerLiveScrape()}
+                isSyncing={isSyncingZip}
+                isFetchingOpenPrices={isFetchingOpenPrices}
+                isLiveScraping={isLiveScraping}
+                feedback={zipSyncFeedback}
+                chainStatuses={chainScrapeStatuses}
+              />
+            }
+            barcodeScannerPanel={
+              <BarcodeScannerPanel
+                defaultStoreId={receiptFallbackStoreId}
+                activeZipCode={activeZipCode}
+                onSaveBarcodePrice={saveBarcodePrice}
+                feedback={barcodeFeedback}
+              />
+            }
+            receiptImportPanel={
+              <ReceiptImportPanel
+                receiptInput={receiptInput}
+                onReceiptInputChange={setReceiptInput}
+                preview={receiptPreview}
+                fallbackStoreId={receiptFallbackStoreId}
+                onFallbackStoreChange={setReceiptFallbackStoreId}
+                activeZipCode={activeZipCode}
+                shoppingDate={shoppingDate}
+                manualAssignments={manualReceiptAssignments}
+                onAssign={(alias, categoryId) =>
+                  setManualReceiptAssignments((prev) => ({ ...prev, [alias]: categoryId }))
+                }
+                learnedAliasCount={receiptAliases.length}
+                isImporting={isImportingReceipt}
+                onImport={() => void applyReceiptImport()}
+                feedback={receiptFeedback}
+                reconciliation={reconciliationView}
+                onApplyReconciledPrices={applyReconciledPrices}
+              />
+            }
+          />
         )}
       </main>
 

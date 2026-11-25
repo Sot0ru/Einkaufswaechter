@@ -23,6 +23,7 @@ const todayInGermany = (): string =>
 
 interface PersistedMobileState {
   activeZipCode?: string;
+  customComboStores?: StoreId[];
   basketItems?: BasketItemInput[];
   customItems?: CustomBasketItem[];
   checkedKeys?: Record<string, boolean>;
@@ -83,6 +84,7 @@ const bootstrap = () => {
       initialOffers={initialOffers}
       weekWindow={weekWindow}
       initialZipCode={initialZip}
+      initialCustomComboStores={stored.customComboStores}
       initialBasketItems={stored.basketItems}
       initialCustomItems={stored.customItems}
       initialCheckedKeys={stored.checkedKeys}

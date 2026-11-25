@@ -81,72 +81,90 @@ const STORE_HEADER_PATTERNS: readonly { storeId: StoreId; patterns: readonly Reg
 
 
 const ABBREVIATION_RULES: readonly [RegExp, string][] = [
-  [/\bmilb\.?/gi, "milbona "],
-  [/\bmetzgerfr\.?/gi, "metzgerfrisch "],
-  [/\bk-cl\.?/gi, "k-classic "],
-  [/\bg&g\b/gi, "gut & günstig "],
-  [/\bdt\.?/gi, "deutsche "],
-  [/\bmarkenbutt(?:er)?\.?/gi, "markenbutter "],
-  [/\bmarkenbut\.?/gi, "markenbutter "],
-  [/\bsuessrahmbutt(?:er)?\.?/gi, "süßrahmbutter "],
-  [/\bvollmil(?:ch)?\.?/gi, "vollmilch "],
-  [/\bfrischm(?:ilch)?\.?/gi, "frischmilch "],
-  [/\brinderhack(?:fl)?\.?/gi, "rinderhackfleisch "],
-  [/\bhackfl\.?/gi, "hackfleisch "],
-  [/\bhaehnchenbr\.?/gi, "hähnchenbrustfilet "],
-  [/\bhähnchenbr\.?/gi, "hähnchenbrustfilet "],
-  [/\bkochschink\.?/gi, "hinterkochschinken "],
-  [/\bpass\.?\s*tomat\.?/gi, "passierte tomaten "],
-  [/\brispentom\.?/gi, "rispentomaten "],
-  [/\bspeisekart\.?/gi, "speisekartoffeln "],
-  [/\btoilettenp(?:ap)?\.?/gi, "toilettenpapier "],
-  [/\btoil\.?\s*pap\.?/gi, "toilettenpapier "],
-  [/\bkuechent\.?/gi, "küchentücher "],
-  [/\bküchent\.?/gi, "küchentücher "],
-  [/\bfilterkaf\.?/gi, "filterkaffee "],
-  [/\broestkaf\.?/gi, "röstkaffee "],
-  [/\bbuttert\.?/gi, "buttertoast "],
-  [/\bspeisequ\.?/gi, "speisequark "],
-  [/\bmagerqu\.?/gi, "magerquark "],
-  [/\bnaturjogh\.?/gi, "naturjoghurt "],
-  [/\bhaferfl\.?/gi, "haferflocken "],
-  [/\bolivenoel\b/gi, "olivenöl"],
-  [/\bschnittk\.?/gi, "schnittkäse "],
-  [/\bbodenh\.?/gi, "bodenhaltung "],
-  [/\bfreilandh\.?/gi, "freilandhaltung "],
-  [/\bmineralw\.?/gi, "mineralwasser "],
+  [/\bmilb(?:\.|(?![a-zäöüß]))/gi, "milbona "],
+  [/\bmils(?:\.|(?![a-zäöüß]))/gi, "milsani "],
+  [/\bmetzgerfr(?:\.|(?![a-zäöüß]))/gi, "metzgerfrisch "],
+  [/\bk-cl(?:\.|(?![a-zäöüß]))/gi, "k-classic "],
+  [/\bk-bio(?:\.|(?![a-zäöüß]))/gi, "bio "],
+  [/\brewe\s+b(?:\.|(?![a-zäöüß]))/gi, "rewe beste wahl "],
+  [/\bg&g(?:\.|(?![a-zäöüß]))/gi, "gut & günstig "],
+  [/\bdt(?:\.|(?![a-zäöüß]))/gi, "deutsche "],
+  [/\bmarkenbutt(?:er)?(?:\.|(?![a-zäöüß]))/gi, "markenbutter "],
+  [/\bmarkenbut(?:\.|(?![a-zäöüß]))/gi, "markenbutter "],
+  [/\bsuessrahmbutt(?:er)?(?:\.|(?![a-zäöüß]))/gi, "süßrahmbutter "],
+  [/\bvollmil(?:ch)?(?:\.|(?![a-zäöüß]))/gi, "vollmilch "],
+  [/\bfrischm(?:ilch)?(?:\.|(?![a-zäöüß]))/gi, "frischmilch "],
+  [/\bhaferdr(?:\.|(?![a-zäöüß]))/gi, "haferdrink "],
+  [/\bfrischk(?:\.|(?![a-zäöüß]))/gi, "frischkäse "],
+  [/\bspagh(?:\.|(?![a-zäöüß]))/gi, "spaghetti "],
+  [/\brinderhack(?:fl)?(?:\.|(?![a-zäöüß]))/gi, "rinderhackfleisch "],
+  [/\bhackfl(?:\.|(?![a-zäöüß]))/gi, "hackfleisch "],
+  [/\b(?:haehnchenbr|hähnchenbr)(?:\.|(?![a-zäöüß]))/gi, "hähnchenbrustfilet "],
+  [/\bkochschink(?:\.|(?![a-zäöüß]))/gi, "hinterkochschinken "],
+  [/\bpass\.?\s*tomat(?:\.|(?![a-zäöüß]))/gi, "passierte tomaten "],
+  [/\brispentom(?:\.|(?![a-zäöüß]))/gi, "rispentomaten "],
+  [/\bkirschtom(?:\.|(?![a-zäöüß]))/gi, "cherrytomaten "],
+  [/\bspeisekart(?:\.|(?![a-zäöüß]))/gi, "speisekartoffeln "],
+  [/\bkartoff(?:\.|(?![a-zäöüß]))/gi, "kartoffeln "],
+  [/\b(?:moehr|möhr)(?:\.|(?![a-zäöüß]))/gi, "möhren "],
+  [/\btoilettenp(?:ap)?(?:\.|(?![a-zäöüß]))/gi, "toilettenpapier "],
+  [/\btoil\.?\s*pap(?:\.|(?![a-zäöüß]))/gi, "toilettenpapier "],
+  [/\b(?:kuechent|küchent)(?:\.|(?![a-zäöüß]))/gi, "küchentücher "],
+  [/\bwaschm(?:\.|(?![a-zäöüß]))/gi, "waschmittel "],
+  [/\b(?:spuelm|spülm)(?:\.|(?![a-zäöüß]))/gi, "spülmittel "],
+  [/\bfilterkaf(?:\.|(?![a-zäöüß]))/gi, "filterkaffee "],
+  [/\broestkaf(?:\.|(?![a-zäöüß]))/gi, "röstkaffee "],
+  [/\bbuttert(?:\.|(?![a-zäöüß]))/gi, "buttertoast "],
+  [/\bspeisequ(?:\.|(?![a-zäöüß]))/gi, "speisequark "],
+  [/\bmagerqu(?:\.|(?![a-zäöüß]))/gi, "magerquark "],
+  [/\bnaturjogh(?:\.|(?![a-zäöüß]))/gi, "naturjoghurt "],
+  [/\bjogh(?:\.|(?![a-zäöüß]))/gi, "joghurt "],
+  [/\bhaferfl(?:\.|(?![a-zäöüß]))/gi, "haferflocken "],
+  [/\bolivenoel(?:\.|(?![a-zäöüß]))/gi, "olivenöl "],
+  [/\bschnittk(?:\.|(?![a-zäöüß]))/gi, "schnittkäse "],
+  [/\bbodenh(?:\.|(?![a-zäöüß]))/gi, "bodenhaltung "],
+  [/\bfreilandh(?:\.|(?![a-zäöüß]))/gi, "freilandhaltung "],
+  [/\bmineralw(?:\.|(?![a-zäöüß]))/gi, "mineralwasser "],
 ];
 
 const FOOTER_STOP_PATTERNS = [
   /^\s*summe\b/i,
-  /^\s*gesamt\b/i,
+  /^\s*gesamt(?:betrag|summe)?\b/i,
   /^\s*zu\s+zahlen\b/i,
   /^\s*total\b/i,
   /^\s*ec-karte\b/i,
   /^\s*girocard\b/i,
   /^\s*barzahlung\b/i,
+  /^\s*geg\.\s*bar\b/i,
   /^\s*gegeben\b/i,
+  /^\s*(?:visa|mastercard|apple\s+pay|google\s+pay|karte|kreditkarte|debitkarte)\b/i,
+  /^\s*steuer\s*%/i,
+  /^\s*mwst\s*%/i,
 ];
 
 const SKIP_ITEM_PATTERNS: readonly { pattern: RegExp; reason: string }[] = [
   { pattern: /\bpfand\b|\bleergut\b|\beinwegpfand\b|\bmehrwegpfand\b/i, reason: "Pfand / Leergut" },
   { pattern: /\btragetasche\b|\beinkaufstüte\b|\bpapiertüte\b/i, reason: "Tragetasche" },
-  { pattern: /\bmwst\b|\bust-id\b|\bsteuernr\b|\btse\b|\bbon-nr\b|\bkasse\b/i, reason: "Kassen-Metadaten" },
-  { pattern: /\bwww\.|\bhttp|\btel\.|\btelefon\b|\bfiliale\b|\bgmbh\b|\bco\.\s*kg\b|\bmarkt ohg\b/i, reason: "Filial-Kopfzeile" },
+  { pattern: /\bmwst\b|\bust-id\b|\bsteuernr\b|\btse\b|\bbon-nr\b|\bkasse\b|\bpayback\b|\bdeutschlandcard\b|\bpunkte\b/i, reason: "Kassen-Metadaten" },
+  { pattern: /\bwww\.|\bhttp|\btel\.|\btelefon\b|\bfiliale\b|\bgmbh\b|\bco\.\s*kg\b|\bmarkt ohg\b|\be-bon\b/i, reason: "Filial-Kopfzeile" },
 ];
 
 const DISCOUNT_LINE_PATTERN =
-  /(?:rabatt|preisvorteil|coupon|sofortrabatt|lidl\s+plus|rewe\s+bonus|kaufland\s+card|edeka\s+app|netto\s+app|penny\s+app|aktion).*-(\d+[,.]\d{2})\s*€?\s*[a-z]?$/i;
+  /(?:rabatt|preisvorteil|coupon|sofortrabatt|k-card|lidl\s+plus|rewe\s+bonus|kaufland\s+card|edeka\s+app|netto\s+app|penny\s+app|aktion).*-(\d+[,.]\d{2})\s*(?:€|eur)?\s*(?:[a-z]\*?|\*)?$/i;
 
-const GENERIC_NEGATIVE_PRICE_PATTERN = /-\s*(\d+[,.]\d{2})\s*€?\s*[a-z]?$/i;
+const GENERIC_NEGATIVE_PRICE_PATTERN = /-\s*(\d+[,.]\d{2})\s*(?:€|eur)?\s*(?:[a-z]\*?|\*)?$/i;
 
 const WEIGHT_DETAIL_PATTERN =
   /(\d+[,.]\d+)\s*(kg|g)\s*[x×*]\s*(\d+[,.]\d{2})\s*(?:eur|€)?(?:\/(?:kg|g))?/i;
 
 const MULTI_QTY_DETAIL_PATTERN =
-  /^\s*(\d+)\s*(?:st\.?|stk\.?|stück)?\s*[x×*]\s*(\d+[,.]\d{2})\s*(?:eur|€)?(?:\s+(\d+[,.]\d{2})\s*€?\s*[a-z]?)?\s*$/i;
+  /^\s*(\d+)\s*(?:st\.?|stk\.?|stück)?\s*[x×*]\s*(\d+[,.]\d{2})\s*(?:eur|€)?(?:\s+(\d+[,.]\d{2})\s*(?:€|eur)?\s*(?:[a-z]\*?|\*)?)?\s*$/i;
 
-const TRAILING_PRICE_PATTERN = /^(.*?)\s+(\d+[,.]\d{2})\s*€?\s*(?:[abAB12])?\s*$/;
+/** Lidl Plus & Penny E-Bon-Format: "0,99 x 2   1,98 A" (Stückpreis zuerst, dann Menge) */
+const PRICE_FIRST_MULTI_QTY_PATTERN =
+  /^\s*(\d+[,.]\d{2})\s*(?:eur|€)?\s*[x×*]\s*(\d+)\s*(?:st\.?|stk\.?)?(?:\s+(\d+[,.]\d{2})\s*(?:€|eur)?\s*(?:[a-z]\*?|\*)?)?\s*$/i;
+
+const TRAILING_PRICE_PATTERN = /^(.*?)\s+(\d+[,.]\d{2})\s*(?:€|eur)?\s*(?:[abAB12]\*?|\*)?\s*$/;
 
 const parseEuroToCents = (raw: string): number =>
   Math.round(Number.parseFloat(raw.replace(",", ".")) * 100);
@@ -444,11 +462,16 @@ export const parseReceiptText = (options: ParseReceiptOptions): ParsedReceiptRes
       }
     }
 
-    // 3. Mehrfachmengen-Detailzeile (z. B. "2 x 0,99   1,98 A")
+    // 3. Mehrfachmengen-Detailzeile (z. B. "2 x 0,99   1,98 A" oder Lidl Plus "0,99 x 2   1,98 A")
     const multiQtyMatch = line.match(MULTI_QTY_DETAIL_PATTERN);
-    if (multiQtyMatch && pendingLabel) {
-      const qty = Number.parseInt(multiQtyMatch[1], 10);
-      const unitPriceCents = parseEuroToCents(multiQtyMatch[2]);
+    const priceFirstMultiMatch = !multiQtyMatch ? line.match(PRICE_FIRST_MULTI_QTY_PATTERN) : null;
+    if ((multiQtyMatch || priceFirstMultiMatch) && pendingLabel) {
+      const qty = multiQtyMatch
+        ? Number.parseInt(multiQtyMatch[1], 10)
+        : Number.parseInt(priceFirstMultiMatch![2], 10);
+      const unitPriceCents = multiQtyMatch
+        ? parseEuroToCents(multiQtyMatch[2])
+        : parseEuroToCents(priceFirstMultiMatch![1]);
       if (qty > 0 && unitPriceCents > 0) {
         pushParsedItem({
           lineIndex: pendingLineIndex,
@@ -510,9 +533,13 @@ export const parseReceiptText = (options: ParseReceiptOptions): ParsedReceiptRes
     }
 
     // 6. Zeile ohne Preis: evtl. Artikelbezeichnung für nachfolgende Mengen-/Gewichtszeile
-    const isHeaderStoreName = STORE_HEADER_PATTERNS.some((s) =>
-      s.patterns.some((p) => p.test(line)),
-    );
+    // Eigenmarken-Zeilen wie "REWE B. HAFERDR. NATUR 1L" oder "EDEKA MILCH 1L" dürfen dabei
+    // nicht fälschlich als Filial-Kopfzeile übersprungen werden.
+    const isHeaderStoreName =
+      i < 4 &&
+      items.length === 0 &&
+      STORE_HEADER_PATTERNS.some((s) => s.patterns.some((p) => p.test(line))) &&
+      !/\b\d+(?:[,.]\d+)?\s*(?:g|kg|ml|l|stk|st)\b/i.test(line);
     if (!isHeaderStoreName && /[a-zäöüß]{3,}/i.test(line) && !/^\d{2}\.\d{2}\.\d{4}/.test(line)) {
       pendingLabel = line;
       pendingLineIndex = i;

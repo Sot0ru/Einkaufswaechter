@@ -1,12 +1,17 @@
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { type Db, schema } from "@/db";
 import { ensureCatalogAndDemoOffers } from "@/db/seed";
 import type { BaseUnit, StoreId } from "@/lib/rules/catalog";
 import type { OfferRecord } from "@/lib/rules/optimizer";
+import type { VerifiedPriceRecord } from "@/lib/rules/price-intelligence";
 import {
   type ChainScrapeStatus,
   scrapeChainsForZip,
 } from "./chain-scrapers";
+import {
+  type OpenPricesBaseCalibration,
+  fetchOpenPricesForZip,
+} from "./open-prices";
 import {
   type FetchZipOffersOptions,
   type ZipRegionInfo,
@@ -17,6 +22,8 @@ import {
 export interface SyncZipOffersOptions extends FetchZipOffersOptions {
   /** Aktiviert das Live-Scraping über alle 7 öffentlichen Ketten-Angebotsseiten */
   enableLiveScraping?: boolean;
+  /** Aktiviert den Live-Abruf echter Community-Supermarktpreise über Open Prices (Open Food Facts) */
+  enableOpenPrices?: boolean;
   timeoutMs?: number;
 }
 
@@ -24,12 +31,17 @@ export interface ZipOfferSyncResult {
   zipCode: string;
   region: ZipRegionInfo;
   referenceDate: string;
-  source: "live_scraped" | "remote_feed" | "regional_catalog";
+  source: "live_scraped" | "open_prices" | "remote_feed" | "regional_catalog";
   fetchedRawCount: number;
   matchedCount: number;
   upsertedCount: number;
   liveScrapedOfferCount: number;
   liveChainCount: number;
+  openPricesMatchedCount: number;
+  openPricesLocalCount: number;
+  openPricesOfferCount: number;
+  openPricesBaseCalibrations: OpenPricesBaseCalibration[];
+  openPricesVerifiedPrices: VerifiedPriceRecord[];
   chainStatuses: ChainScrapeStatus[];
   syncedAt: string;
   offers: OfferRecord[];
@@ -38,9 +50,10 @@ export interface ZipOfferSyncResult {
 /**
  * Synchronisiert die Wochenangebote für eine deutsche Postleitzahl idempotent in die Datenbank
  * (`weekly_offers`) und protokolliert den Lauf in `offer_fetch_runs`.
- * Bei `enableLiveScraping: true` (oder `LIVE_SCRAPING_ENABLED=true`) werden alle 7 Ketten
- * live über JSON-LD / Embedded-JSON / HTML-Kacheln abgefragt; blockierte oder leere Ketten
- * fallen transparent auf den regionalen PLZ-Katalog zurück.
+ * - Bei `enableLiveScraping: true` (oder `LIVE_SCRAPING_ENABLED=true`) werden alle 7 Ketten live
+ *   abgefragt UND ergänzend echte Open-Prices-Community-Preise (Open Food Facts, ODbL-1.0) geladen.
+ * - Bei `enableOpenPrices: true` wird gezielt die offene Open-Prices-API abgefragt (kein Bot-Schutz).
+ * - Blockierte oder leere Quellen fallen transparent auf den regionalen PLZ-Katalog zurück.
  */
 export const syncOffersForZipCode = async (
   db: Db,
@@ -51,6 +64,7 @@ export const syncOffersForZipCode = async (
 
   const shouldScrapeLive =
     options.enableLiveScraping ?? process.env.LIVE_SCRAPING_ENABLED === "true";
+  const shouldFetchOpenPrices = options.enableOpenPrices ?? shouldScrapeLive;
 
   const fetched = await fetchAndMatchOffersForZip({
     ...options,
@@ -63,35 +77,118 @@ export const syncOffersForZipCode = async (
   let matchedCount = fetched.matchedCount;
   let liveScrapedOfferCount = 0;
   let liveChainCount = 0;
+  let openPricesMatchedCount = 0;
+  let openPricesLocalCount = 0;
+  let openPricesOfferCount = 0;
+  let openPricesBaseCalibrations: OpenPricesBaseCalibration[] = [];
+  let openPricesVerifiedPrices: VerifiedPriceRecord[] = [];
   let chainStatuses: ChainScrapeStatus[] = [];
 
-  if (shouldScrapeLive) {
-    const scraped = await scrapeChainsForZip({
-      zipCode: region.zipCode,
-      referenceDate: options.referenceDate,
-      stores: options.stores,
-      fetchImpl: options.fetchImpl,
-      timeoutMs: options.timeoutMs,
-    });
+  const [scrapedResult, openPricesResult] = await Promise.all([
+    shouldScrapeLive
+      ? scrapeChainsForZip({
+          zipCode: region.zipCode,
+          referenceDate: options.referenceDate,
+          stores: options.stores,
+          fetchImpl: options.fetchImpl,
+          timeoutMs: options.timeoutMs,
+        })
+      : Promise.resolve(null),
+    shouldFetchOpenPrices
+      ? fetchOpenPricesForZip({
+          zipCode: region.zipCode,
+          referenceDate: options.referenceDate,
+          stores: options.stores,
+          fetchImpl: options.fetchImpl,
+          timeoutMs: options.timeoutMs,
+        })
+      : Promise.resolve(null),
+  ]);
 
-    chainStatuses = scraped.chainStatuses;
-    liveChainCount = scraped.liveChainCount;
-    liveScrapedOfferCount = scraped.totalMatchedCount;
-    fetchedRawCount += scraped.totalExtractedRawCount;
+  const priorityOffers: OfferRecord[] = [];
+  const coveredStoreCategories = new Set<string>();
 
-    if (scraped.offers.length > 0) {
-      // Live gescrapte Angebote für Ketten, die echte Daten geliefert haben, bevorzugen
-      // und mit Regional-Angeboten der übrigen Kategorien/Ketten kombinieren
-      const liveStoreCategoryKeys = new Set(
-        scraped.offers.map((o) => `${o.storeId}:${o.categoryId}`),
-      );
-      const fallbackRemaining = finalOffers.filter(
-        (o) => !liveStoreCategoryKeys.has(`${o.storeId}:${o.categoryId}`),
-      );
-      finalOffers = [...scraped.offers, ...fallbackRemaining];
-      matchedCount = finalOffers.length;
+  if (scrapedResult) {
+    chainStatuses = scrapedResult.chainStatuses;
+    liveChainCount = scrapedResult.liveChainCount;
+    liveScrapedOfferCount = scrapedResult.totalMatchedCount;
+    fetchedRawCount += scrapedResult.totalExtractedRawCount;
+
+    for (const offer of scrapedResult.offers) {
+      priorityOffers.push(offer);
+      coveredStoreCategories.add(`${offer.storeId}:${offer.categoryId}`);
+    }
+    if (scrapedResult.offers.length > 0) {
       source = "live_scraped";
     }
+  }
+
+  // Externe Produktfeeds (OFFER_FEED_URL) haben Vorrang vor Open-Prices-Ergänzungen
+  if (fetched.source === "remote_feed") {
+    for (const offer of fetched.offers) {
+      const key = `${offer.storeId}:${offer.categoryId}`;
+      if (!coveredStoreCategories.has(key)) {
+        priorityOffers.push(offer);
+        coveredStoreCategories.add(key);
+      }
+    }
+  }
+
+  if (openPricesResult && openPricesResult.source === "open_prices_live") {
+    fetchedRawCount += openPricesResult.fetchedRawCount;
+    openPricesMatchedCount = openPricesResult.matchedCount;
+    openPricesLocalCount = openPricesResult.localMatchedCount;
+    openPricesBaseCalibrations = openPricesResult.baseCalibrations;
+    openPricesVerifiedPrices = openPricesResult.verifiedPrices;
+
+    for (const offer of openPricesResult.offers) {
+      const key = `${offer.storeId}:${offer.categoryId}`;
+      if (!coveredStoreCategories.has(key)) {
+        priorityOffers.push(offer);
+        coveredStoreCategories.add(key);
+        openPricesOfferCount += 1;
+      }
+    }
+
+    if (source === "regional_catalog" && openPricesResult.matchedCount > 0) {
+      source = "open_prices";
+    }
+
+    // Idempotent echte Open-Prices-Beobachtungen für die 90-Tage-Preishistorie speichern
+    if (openPricesResult.verifiedPrices.length > 0) {
+      const existingOpRows = await db
+        .select({ rawLabel: schema.receiptObservations.rawLabel })
+        .from(schema.receiptObservations)
+        .where(like(schema.receiptObservations.rawLabel, "[OP:%"));
+      const existingLabels = new Set(existingOpRows.map((row) => row.rawLabel));
+
+      for (const obs of openPricesResult.verifiedPrices) {
+        const opTag = `[OP:${obs.storeId}:${obs.categoryId}:${obs.observedDate}:${obs.priceCents}]`;
+        if (existingLabels.has(opTag)) continue;
+        existingLabels.add(opTag);
+        await db.insert(schema.receiptObservations).values({
+          storeId: obs.storeId,
+          zipCode: region.zipCode,
+          categoryId: obs.categoryId,
+          rawLabel: opTag,
+          priceCents: obs.priceCents,
+          isOffer: openPricesResult.offers.some(
+            (o) => o.storeId === obs.storeId && o.categoryId === obs.categoryId,
+          ),
+          receiptDate: obs.observedDate,
+          packageAmount: obs.packageAmount,
+          packageUnit: obs.packageUnit,
+        });
+      }
+    }
+  }
+
+  if (priorityOffers.length > 0) {
+    const fallbackRemaining = finalOffers.filter(
+      (o) => !coveredStoreCategories.has(`${o.storeId}:${o.categoryId}`),
+    );
+    finalOffers = [...priorityOffers, ...fallbackRemaining];
+    matchedCount = finalOffers.length;
   }
 
   let upsertedCount = 0;
@@ -168,6 +265,11 @@ export const syncOffersForZipCode = async (
     upsertedCount,
     liveScrapedOfferCount,
     liveChainCount,
+    openPricesMatchedCount,
+    openPricesLocalCount,
+    openPricesOfferCount,
+    openPricesBaseCalibrations,
+    openPricesVerifiedPrices,
     chainStatuses,
     syncedAt: new Date().toISOString(),
     offers,

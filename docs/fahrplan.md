@@ -51,5 +51,11 @@
 - [x] **Echte Filial-Entfernungen, Öffnungszeiten & Feiertags-Wächter (Paket 9):**
   - Kostenlose OpenStreetMap/Overpass- & Nominatim-Anbindung (`src/lib/providers/store-locator.ts`, `GET /api/v1/stores/nearby`) mit 7-Tage-DB-Cache (`store_locations`) und Offline-Fallback.
   - Deterministischer OSM-`opening_hours`-Parser und deutscher Feiertags-Rechner nach PLZ-Bundesland (`src/lib/rules/opening-hours.ts`) inkl. automatischer Übernahme realer Wegzeiten in die Smart-Split-Umweg-Minuten sowie Karten-Links in `CompareView` und `InStoreView`.
+- [x] **Echte Preisquellen (Open Prices & Produktfeeds):**
+  - Open Prices (Open Food Facts, ODbL-1.0) für lokale aktuelle Wochenangebote, lokale Normalpreis-Kalibrierung und Barcode-Marktpreise (`src/lib/providers/open-prices.ts`, `/api/v1/offers/open-prices`).
+  - Zero-Dependency CSV-/TSV-Produktfeed-Parser (Awin/Händler-Feeds) und erweiterter deutscher E-Bon-Parser (`src/lib/providers/product-feed-parser.ts`, `src/lib/providers/receipt-importer.ts`).
+- [x] **Entschlackte Oberfläche & Frei wählbare Supermarkt-Kombination:**
+  - Freie Kombination aus 2 oder mehr Supermärkten (`optimizeCustomStoreCombo` in `src/lib/rules/optimizer.ts`) mit automatischer Warenkorb-Aufteilung, Ersparnis-Anzeige gegenüber Einzelmarkt und direkter Übernahme in die „Im Laden“-Laufroute.
+  - Fokus auf eine klare Hauptaufgabe pro Ansicht: ruhige Ergebnis-Karte + Einstellungs-Drawer auf „Vergleich“, Segment-Umschalter (*Angebote* | *Bon & Barcode* | *Prospekt / CSV*) in „Angebote & Preise“, Schnellsuche + kompakte Liste mit dezenten Werkzeug-Schubladen in „Liste“ sowie ruhigere Artikelzeilen mit max. 1 Haupt-Badge auf den ersten Blick.
 - [ ] **Haushaltsbudget, Einkaufs-Archiv & Spar-Bilanz (Paket 10):** Monats-/Wochenbudget, Einkaufs-Archiv mit realer Ersparnis-Bilanz und CSV-Export.
 - [ ] **Vorratsschrank, MHD-Radar & 7-Tage-Wochen-Essensplan (Paket 11):** Doppelkauf-Schutz, Reste-Küche & Pfand-/Leergut-Rechner.

@@ -125,6 +125,42 @@ export interface TwoStoreSplitResult {
   secondaryDepartments: DepartmentGroup[];
 }
 
+export interface CustomStoreComboLeg {
+  storeId: StoreId;
+  storeName: string;
+  role: "main" | "detour";
+  totalCheckoutCents: number;
+  totalRegularCents: number;
+  totalSavingsCents: number;
+  offerCount: number;
+  detourMinutes: number;
+  items: ResolvedStoreItem[];
+  departments: DepartmentGroup[];
+}
+
+export interface CustomStoreComboResult {
+  selectedStoreIds: StoreId[];
+  primaryStoreId: StoreId;
+  primaryStoreName: string;
+  /** Gewählte Märkte mit mindestens einem Artikel, Hauptladen zuerst */
+  legs: CustomStoreComboLeg[];
+  /** Gewählte Märkte ohne günstigeren Artikel gegenüber dem Hauptladen */
+  unusedStoreIds: StoreId[];
+  totalCheckoutCents: number;
+  totalRegularCents: number;
+  totalSavingsCents: number;
+  /** Günstigster Einzelmarkt innerhalb genau dieser gewählten Kombination */
+  bestSingleInComboStoreId: StoreId;
+  bestSingleInComboStoreName: string;
+  bestSingleInComboTotalCents: number;
+  /** Ersparnis gegenüber dem besten Einzelmarkt innerhalb dieser Kombination */
+  savingsVsBestSingleInComboCents: number;
+  /** Ersparnis (oder Mehrkosten bei negativem Wert) gegenüber dem insgesamt günstigsten Einzelmarkt */
+  savingsVsOverallBestSingleCents: number;
+  /** Summe der persönlichen Umweg-Minuten für alle Nebenläden (Abstecher) */
+  totalDetourMinutes: number;
+}
+
 export interface OptimizationInput {
   items: readonly BasketItemInput[];
   enabledStores: readonly StoreId[];
@@ -139,6 +175,8 @@ export interface OptimizationInput {
   storeDetourMinutes?: Partial<Record<StoreId, number>>;
   /** Mindest-Zusatzersparnis pro Umweg-Minute in Cent (Standard: 50) */
   minSavingsPerDetourMinuteCents?: number;
+  /** Optional: 2 oder mehr frei kombinierte Supermärkte (z. B. ["lidl", "rewe"]) */
+  customComboStores?: readonly StoreId[];
 }
 
 export interface OptimizationOutput {
@@ -147,6 +185,7 @@ export interface OptimizationOutput {
   bestSingleStore: SingleStoreResult | null;
   singleStoreRankings: SingleStoreResult[];
   bestTwoStoreSplit: TwoStoreSplitResult | null;
+  customStoreCombo: CustomStoreComboResult | null;
   recommendedStrategy: "single" | "split";
 }
 
@@ -343,6 +382,271 @@ export const resolveStoreItemPrice = (params: {
   };
 };
 
+export interface CustomStoreComboInput {
+  items: readonly BasketItemInput[];
+  selectedStoreIds: readonly StoreId[];
+  enabledLoyaltyApps: readonly StoreId[];
+  shoppingDate: string;
+  offers: readonly OfferRecord[];
+  customBasePrices?: OptimizationInput["customBasePrices"];
+  storeDetourMinutes?: Partial<Record<StoreId, number>>;
+  /** Optionaler Gesamtpreis des insgesamt günstigsten Einzelmarkts (als Vergleichsreferenz) */
+  overallBestSingleTotalCents?: number;
+}
+
+const computeCustomStoreComboFromResolved = (params: {
+  activeItems: readonly BasketItemInput[];
+  selectedStoreIds: readonly StoreId[];
+  resolvedByStore: ReadonlyMap<StoreId, ReadonlyMap<string, ResolvedStoreItem>>;
+  storeDetourMinutes?: Partial<Record<StoreId, number>>;
+  overallBestSingleTotalCents?: number;
+}): CustomStoreComboResult | null => {
+  const uniqueStoreIds: StoreId[] = [];
+  for (const storeId of params.selectedStoreIds) {
+    if (STORE_MAP[storeId] && !uniqueStoreIds.includes(storeId)) {
+      uniqueStoreIds.push(storeId);
+    }
+  }
+  if (uniqueStoreIds.length < 2 || params.activeItems.length === 0) {
+    return null;
+  }
+
+  const orderIndex = new Map<StoreId, number>(uniqueStoreIds.map((id, idx) => [id, idx]));
+  const detourOf = (storeId: StoreId): number =>
+    Math.max(0, params.storeDetourMinutes?.[storeId] ?? 0);
+
+  // Einzelmarkt-Summen innerhalb der gewählten Kombi
+  const singleTotals = new Map<StoreId, { totalCents: number; offerCount: number }>();
+  for (const storeId of uniqueStoreIds) {
+    const storeMap = params.resolvedByStore.get(storeId)!;
+    let totalCents = 0;
+    let offerCount = 0;
+    for (const item of params.activeItems) {
+      const resolved = storeMap.get(item.categoryId)!;
+      totalCents += resolved.checkoutCents;
+      if (resolved.isOffer) offerCount += 1;
+    }
+    singleTotals.set(storeId, { totalCents, offerCount });
+  }
+
+  const bestSingleInComboStoreId = [...uniqueStoreIds].sort((a, b) => {
+    const ta = singleTotals.get(a)!;
+    const tb = singleTotals.get(b)!;
+    if (ta.totalCents !== tb.totalCents) return ta.totalCents - tb.totalCents;
+    if (ta.offerCount !== tb.offerCount) return tb.offerCount - ta.offerCount;
+    return (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0);
+  })[0];
+  const bestSingleInComboTotalCents = singleTotals.get(bestSingleInComboStoreId)!.totalCents;
+
+  // Pro Artikel Minimalpreis über genau die gewählten Märkte ermitteln
+  const itemMinPrices = params.activeItems.map((item) => {
+    let minCents = Number.POSITIVE_INFINITY;
+    for (const storeId of uniqueStoreIds) {
+      const price = params.resolvedByStore.get(storeId)!.get(item.categoryId)!.checkoutCents;
+      if (price < minCents) minCents = price;
+    }
+    return minCents;
+  });
+
+  // Hauptladen wählen: der Markt, der mit Hauptladen-Tie-Breaking die meisten Artikel abdeckt
+  const minPriceHits = new Map<StoreId, number>(uniqueStoreIds.map((id) => [id, 0]));
+  params.activeItems.forEach((item, index) => {
+    const minCents = itemMinPrices[index];
+    for (const storeId of uniqueStoreIds) {
+      const price = params.resolvedByStore.get(storeId)!.get(item.categoryId)!.checkoutCents;
+      if (price === minCents) {
+        minPriceHits.set(storeId, (minPriceHits.get(storeId) ?? 0) + 1);
+      }
+    }
+  });
+
+  const primaryStoreId = [...uniqueStoreIds].sort((a, b) => {
+    const hitsDiff = (minPriceHits.get(b) ?? 0) - (minPriceHits.get(a) ?? 0);
+    if (hitsDiff !== 0) return hitsDiff;
+    const totalDiff = singleTotals.get(a)!.totalCents - singleTotals.get(b)!.totalCents;
+    if (totalDiff !== 0) return totalDiff;
+    const detourDiff = detourOf(a) - detourOf(b);
+    if (detourDiff !== 0) return detourDiff;
+    return (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0);
+  })[0];
+
+  const secondaryStoreIds = uniqueStoreIds.filter((id) => id !== primaryStoreId);
+
+  // Für Gleichstände zwischen Nebenläden (bei 3+ Märkten): Läden bevorzugen, die ohnehin
+  // exklusive Schnäppchen haben, um unnötige Zusatz-Stopps zu vermeiden.
+  const uniqueSecondaryWins = new Map<StoreId, number>(secondaryStoreIds.map((id) => [id, 0]));
+  const totalSecondaryWins = new Map<StoreId, number>(secondaryStoreIds.map((id) => [id, 0]));
+  params.activeItems.forEach((item, index) => {
+    const minCents = itemMinPrices[index];
+    const primaryPrice = params.resolvedByStore
+      .get(primaryStoreId)!
+      .get(item.categoryId)!.checkoutCents;
+    if (primaryPrice === minCents) return;
+
+    const winners = secondaryStoreIds.filter(
+      (storeId) =>
+        params.resolvedByStore.get(storeId)!.get(item.categoryId)!.checkoutCents === minCents,
+    );
+    for (const winner of winners) {
+      totalSecondaryWins.set(winner, (totalSecondaryWins.get(winner) ?? 0) + 1);
+    }
+    if (winners.length === 1) {
+      uniqueSecondaryWins.set(winners[0], (uniqueSecondaryWins.get(winners[0]) ?? 0) + 1);
+    }
+  });
+
+  const secondaryPriorityRank = new Map<StoreId, number>(
+    [...secondaryStoreIds]
+      .sort((a, b) => {
+        const uniqDiff = (uniqueSecondaryWins.get(b) ?? 0) - (uniqueSecondaryWins.get(a) ?? 0);
+        if (uniqDiff !== 0) return uniqDiff;
+        const winDiff = (totalSecondaryWins.get(b) ?? 0) - (totalSecondaryWins.get(a) ?? 0);
+        if (winDiff !== 0) return winDiff;
+        const totalDiff = singleTotals.get(a)!.totalCents - singleTotals.get(b)!.totalCents;
+        if (totalDiff !== 0) return totalDiff;
+        const detourDiff = detourOf(a) - detourOf(b);
+        if (detourDiff !== 0) return detourDiff;
+        return (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0);
+      })
+      .map((id, idx) => [id, idx]),
+  );
+
+  const itemsByStore = new Map<StoreId, ResolvedStoreItem[]>(uniqueStoreIds.map((id) => [id, []]));
+
+  params.activeItems.forEach((item, index) => {
+    const minCents = itemMinPrices[index];
+    const primaryItem = params.resolvedByStore.get(primaryStoreId)!.get(item.categoryId)!;
+
+    // Hauptladen-Tie-Breaking: Gleich teure Artikel bleiben immer beim Hauptladen
+    if (primaryItem.checkoutCents === minCents) {
+      itemsByStore.get(primaryStoreId)!.push(primaryItem);
+      return;
+    }
+
+    const bestSecondaryId = secondaryStoreIds
+      .filter(
+        (storeId) =>
+          params.resolvedByStore.get(storeId)!.get(item.categoryId)!.checkoutCents === minCents,
+      )
+      .sort((a, b) => (secondaryPriorityRank.get(a) ?? 0) - (secondaryPriorityRank.get(b) ?? 0))[0];
+
+    itemsByStore
+      .get(bestSecondaryId)!
+      .push(params.resolvedByStore.get(bestSecondaryId)!.get(item.categoryId)!);
+  });
+
+  const buildLeg = (storeId: StoreId, role: "main" | "detour"): CustomStoreComboLeg => {
+    const items = itemsByStore.get(storeId)!;
+    const totalCheckoutCents = items.reduce((sum, i) => sum + i.checkoutCents, 0);
+    const totalRegularCents = items.reduce((sum, i) => sum + i.regularCheckoutCents, 0);
+    return {
+      storeId,
+      storeName: STORE_MAP[storeId].shortName,
+      role,
+      totalCheckoutCents,
+      totalRegularCents,
+      totalSavingsCents: Math.max(0, totalRegularCents - totalCheckoutCents),
+      offerCount: items.filter((i) => i.isOffer).length,
+      detourMinutes: detourOf(storeId),
+      items,
+      departments: groupItemsByDepartment(items),
+    };
+  };
+
+  const primaryLeg = buildLeg(primaryStoreId, "main");
+  const secondaryLegs = secondaryStoreIds
+    .filter((storeId) => itemsByStore.get(storeId)!.length > 0)
+    .map((storeId) => buildLeg(storeId, "detour"))
+    .sort((a, b) => {
+      if (b.items.length !== a.items.length) return b.items.length - a.items.length;
+      if (b.totalCheckoutCents !== a.totalCheckoutCents) {
+        return b.totalCheckoutCents - a.totalCheckoutCents;
+      }
+      if (a.detourMinutes !== b.detourMinutes) return a.detourMinutes - b.detourMinutes;
+      return (orderIndex.get(a.storeId) ?? 0) - (orderIndex.get(b.storeId) ?? 0);
+    });
+
+  const legs: CustomStoreComboLeg[] = [primaryLeg, ...secondaryLegs];
+  const unusedStoreIds = uniqueStoreIds.filter((storeId) => itemsByStore.get(storeId)!.length === 0);
+
+  const totalCheckoutCents = legs.reduce((sum, leg) => sum + leg.totalCheckoutCents, 0);
+  const totalRegularCents = legs.reduce((sum, leg) => sum + leg.totalRegularCents, 0);
+  const totalSavingsCents = Math.max(0, totalRegularCents - totalCheckoutCents);
+  const savingsVsBestSingleInComboCents = Math.max(
+    0,
+    bestSingleInComboTotalCents - totalCheckoutCents,
+  );
+  const overallRefCents = params.overallBestSingleTotalCents ?? bestSingleInComboTotalCents;
+  const savingsVsOverallBestSingleCents = overallRefCents - totalCheckoutCents;
+  const totalDetourMinutes = secondaryLegs.reduce((sum, leg) => sum + leg.detourMinutes, 0);
+
+  return {
+    selectedStoreIds: uniqueStoreIds,
+    primaryStoreId,
+    primaryStoreName: STORE_MAP[primaryStoreId].shortName,
+    legs,
+    unusedStoreIds,
+    totalCheckoutCents,
+    totalRegularCents,
+    totalSavingsCents,
+    bestSingleInComboStoreId,
+    bestSingleInComboStoreName: STORE_MAP[bestSingleInComboStoreId].shortName,
+    bestSingleInComboTotalCents,
+    savingsVsBestSingleInComboCents,
+    savingsVsOverallBestSingleCents,
+    totalDetourMinutes,
+  };
+};
+
+/**
+ * Berechnet für eine vom Nutzer frei gewählte Kombination aus 2 oder mehr Supermärkten
+ * die optimale Artikel-Aufteilung mit striktem Hauptladen-Tie-Breaking.
+ */
+export const optimizeCustomStoreCombo = (
+  input: CustomStoreComboInput,
+): CustomStoreComboResult | null => {
+  const activeItems = input.items.filter(
+    (item) => item.quantity > 0 && CATEGORY_MAP[item.categoryId] != null,
+  );
+  if (activeItems.length === 0) return null;
+
+  const uniqueStoreIds = Array.from(
+    new Set(input.selectedStoreIds.filter((storeId) => STORE_MAP[storeId] != null)),
+  );
+  if (uniqueStoreIds.length < 2) return null;
+
+  const loyaltySet = new Set<StoreId>(input.enabledLoyaltyApps);
+  const resolvedByStore = new Map<StoreId, Map<string, ResolvedStoreItem>>();
+
+  for (const storeId of uniqueStoreIds) {
+    const catMap = new Map<string, ResolvedStoreItem>();
+    for (const item of activeItems) {
+      catMap.set(
+        item.categoryId,
+        resolveStoreItemPrice({
+          categoryId: item.categoryId,
+          quantity: item.quantity,
+          storeId,
+          shoppingDate: input.shoppingDate,
+          hasLoyaltyApp: loyaltySet.has(storeId),
+          offers: input.offers,
+          customBasePrices: input.customBasePrices,
+          preference: item.preference,
+        }),
+      );
+    }
+    resolvedByStore.set(storeId, catMap);
+  }
+
+  return computeCustomStoreComboFromResolved({
+    activeItems,
+    selectedStoreIds: uniqueStoreIds,
+    resolvedByStore,
+    storeDetourMinutes: input.storeDetourMinutes,
+    overallBestSingleTotalCents: input.overallBestSingleTotalCents,
+  });
+};
+
 export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOutput => {
   const secondStoreThresholdCents = input.secondStoreThresholdCents ?? 500;
   const minSavingsPerDetourMinuteCents =
@@ -360,6 +664,7 @@ export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOu
       bestSingleStore: null,
       singleStoreRankings: [],
       bestTwoStoreSplit: null,
+      customStoreCombo: null,
       recommendedStrategy: "single",
     };
   }
@@ -511,6 +816,38 @@ export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOu
     }
   }
 
+  // 3. Optional: Frei gewählte Supermarkt-Kombination (2+ Märkte) berechnen
+  let customStoreCombo: CustomStoreComboResult | null = null;
+  if (input.customComboStores && input.customComboStores.length >= 2) {
+    for (const storeId of input.customComboStores) {
+      if (!STORE_MAP[storeId] || resolvedByStore.has(storeId)) continue;
+      const catMap = new Map<string, ResolvedStoreItem>();
+      for (const item of activeItems) {
+        catMap.set(
+          item.categoryId,
+          resolveStoreItemPrice({
+            categoryId: item.categoryId,
+            quantity: item.quantity,
+            storeId,
+            shoppingDate: input.shoppingDate,
+            hasLoyaltyApp: loyaltySet.has(storeId),
+            offers: input.offers,
+            customBasePrices: input.customBasePrices,
+            preference: item.preference,
+          }),
+        );
+      }
+      resolvedByStore.set(storeId, catMap);
+    }
+    customStoreCombo = computeCustomStoreComboFromResolved({
+      activeItems,
+      selectedStoreIds: input.customComboStores,
+      resolvedByStore,
+      storeDetourMinutes: input.storeDetourMinutes,
+      overallBestSingleTotalCents: bestSingleStore?.totalCheckoutCents,
+    });
+  }
+
   const recommendedStrategy =
     bestSplit != null && bestSplit.worthSecondStore ? "split" : "single";
 
@@ -520,6 +857,7 @@ export const optimizeShoppingBasket = (input: OptimizationInput): OptimizationOu
     bestSingleStore,
     singleStoreRankings,
     bestTwoStoreSplit: bestSplit,
+    customStoreCombo,
     recommendedStrategy,
   };
 };

@@ -10,6 +10,10 @@ import {
   normalizeBarcode,
 } from "@/lib/providers/barcode-lookup";
 import {
+  fetchOpenPricesByBarcode,
+  type OpenPriceBarcodeSighting,
+} from "@/lib/providers/open-prices";
+import {
   CATEGORIES,
   CATEGORY_MAP,
   DEPARTMENTS,
@@ -19,6 +23,7 @@ import {
   type StoreId,
 } from "@/lib/rules/catalog";
 import { formatEuroCents } from "@/lib/rules/optimizer";
+import { formatShortDate } from "./format";
 import { ShrinkflationAlert } from "./PriceBadges";
 import { cn, PRIMARY_BUTTON, SECONDARY_BUTTON, ToggleChip } from "./ui";
 
@@ -65,6 +70,7 @@ export const BarcodeScannerPanel = ({
   const [isSearching, setIsSearching] = useState(false);
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
   const [product, setProduct] = useState<BarcodeProductInfo | null>(null);
+  const [communityPrices, setCommunityPrices] = useState<OpenPriceBarcodeSighting[]>([]);
 
   const [selectedStoreId, setSelectedStoreId] = useState<StoreId>(defaultStoreId);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
@@ -99,9 +105,18 @@ export const BarcodeScannerPanel = ({
     };
   }, []);
 
+  const applySightingToForm = (sighting: OpenPriceBarcodeSighting) => {
+    setPriceInput((sighting.priceCents / 100).toFixed(2).replace(".", ","));
+    if (sighting.storeId) {
+      setSelectedStoreId(sighting.storeId);
+    }
+    setIsOffer(sighting.isDiscounted);
+  };
+
   const performLookup = async (rawCode: string) => {
     const normalized = normalizeBarcode(rawCode);
     setBarcodeInput(normalized);
+    setCommunityPrices([]);
     if (!isValidBarcode(normalized)) {
       setLookupMessage(
         "Ungültige EAN/GTIN-Prüfziffer. Gib eine gültige 8- bis 14-stellige Barcode-Nummer ein.",
@@ -114,24 +129,33 @@ export const BarcodeScannerPanel = ({
     setLookupMessage(null);
 
     try {
-      // 1. Erst über Server-API (mit DB-Cache + Open Food Facts)
+      // 1. Erst über Server-API (DB-Cache + Open Food Facts + Open Prices)
       const response = await fetch(`/api/v1/barcode?code=${encodeURIComponent(normalized)}`);
       if (response.ok) {
         const data = await response.json();
+        const sightings = Array.isArray(data.communityPrices)
+          ? (data.communityPrices as OpenPriceBarcodeSighting[])
+          : [];
+        setCommunityPrices(sightings);
         if (data.product) {
-          applyFoundProduct(data.product as BarcodeProductInfo);
+          applyFoundProduct(data.product as BarcodeProductInfo, sightings);
           return;
         }
       }
     } catch {
-      // Offline / PWA: direkter Client-Lookup (Open Food Facts + Offline-Demo)
+      // Offline / PWA: direkter Client-Lookup (Open Food Facts + Open Prices)
     } finally {
       setIsSearching(false);
     }
 
-    const clientFound = await lookupBarcodeProduct(normalized);
+    const [clientFound, openPricesRes] = await Promise.all([
+      lookupBarcodeProduct(normalized),
+      fetchOpenPricesByBarcode(normalized),
+    ]);
+    setCommunityPrices(openPricesRes.sightings);
+
     if (clientFound) {
-      applyFoundProduct(clientFound);
+      applyFoundProduct(clientFound, openPricesRes.sightings);
     } else {
       setProduct({
         barcode: normalized,
@@ -147,19 +171,35 @@ export const BarcodeScannerPanel = ({
       });
       setSelectedCategoryId("");
       setLookupMessage(
-        "Barcode nicht in Open Food Facts gefunden. Du kannst Kategorie und Preis trotzdem manuell zuordnen.",
+        openPricesRes.sightings.length > 0
+          ? `Produkt nicht in Open Food Facts gelistet, aber ${openPricesRes.sightings.length} Community-Preise über Open Prices gefunden.`
+          : "Barcode nicht in Open Food Facts gefunden. Du kannst Kategorie und Preis trotzdem manuell zuordnen.",
       );
     }
   };
 
-  const applyFoundProduct = (found: BarcodeProductInfo) => {
+  const applyFoundProduct = (
+    found: BarcodeProductInfo,
+    sightings: readonly OpenPriceBarcodeSighting[] = [],
+  ) => {
     setProduct(found);
     setSelectedCategoryId(found.categoryId ?? "");
-    const defaultCents = found.categoryId
-      ? CATEGORY_MAP[found.categoryId]?.defaultBasePrices[selectedStoreId]?.priceCents
-      : undefined;
-    if (defaultCents) {
-      setPriceInput((defaultCents / 100).toFixed(2).replace(".", ","));
+    const preferredSighting =
+      sightings.find((s) => s.countryCode === "DE" && s.storeId != null) ??
+      sightings.find((s) => s.countryCode === "DE");
+    if (preferredSighting) {
+      setPriceInput((preferredSighting.priceCents / 100).toFixed(2).replace(".", ","));
+      if (preferredSighting.storeId) {
+        setSelectedStoreId(preferredSighting.storeId);
+      }
+      setIsOffer(preferredSighting.isDiscounted);
+    } else {
+      const defaultCents = found.categoryId
+        ? CATEGORY_MAP[found.categoryId]?.defaultBasePrices[selectedStoreId]?.priceCents
+        : undefined;
+      if (defaultCents) {
+        setPriceInput((defaultCents / 100).toFixed(2).replace(".", ","));
+      }
     }
     const sourceLabel =
       found.source === "open_food_facts"
@@ -167,7 +207,11 @@ export const BarcodeScannerPanel = ({
         : found.source === "db_cache"
           ? "lokaler Cache"
           : "Offline-Referenz";
-    setLookupMessage(`Produkt erkannt über ${sourceLabel}.`);
+    const priceSuffix =
+      sightings.length > 0
+        ? ` · ${sightings.length} echte Preisbeobachtung${sightings.length === 1 ? "" : "en"} über Open Prices gefunden.`
+        : ".";
+    setLookupMessage(`Produkt erkannt über ${sourceLabel}${priceSuffix}`);
   };
 
   const startCameraScan = async () => {
@@ -366,6 +410,56 @@ export const BarcodeScannerPanel = ({
           {liveShrinkflationWarning && (
             <div className="mt-2.5">
               <ShrinkflationAlert warning={liveShrinkflationWarning} />
+            </div>
+          )}
+
+          {communityPrices.length > 0 && (
+            <div className="mt-3 rounded-md border border-line bg-panel p-3">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-route">
+                Echte Marktpreise aus Open Prices ({communityPrices.length})
+              </p>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {communityPrices.slice(0, 5).map((sighting) => (
+                  <li
+                    key={sighting.openPriceId}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded bg-paper px-2.5 py-1.5 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-bold">
+                        {sighting.storeId ? STORE_MAP[sighting.storeId].shortName : sighting.storeLabel}
+                      </span>
+                      {(sighting.city || sighting.zipCode) && (
+                        <span className="text-muted">
+                          {" "}
+                          · {[sighting.zipCode, sighting.city].filter(Boolean).join(" ")}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted"> · {formatShortDate(sighting.date)}</span>
+                      {sighting.isDiscounted && (
+                        <span className="ml-1.5 rounded border border-route px-1 text-[11px] font-bold text-route">
+                          {sighting.isLoyaltyDiscount ? "App-Rabatt" : "Aktion"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 tabular-nums">
+                      <span className="font-extrabold">{formatEuroCents(sighting.priceCents)}</span>
+                      {sighting.regularPriceCents != null &&
+                        sighting.regularPriceCents > sighting.priceCents && (
+                          <s className="text-xs text-muted">
+                            {formatEuroCents(sighting.regularPriceCents)}
+                          </s>
+                        )}
+                      <button
+                        type="button"
+                        onClick={() => applySightingToForm(sighting)}
+                        className="rounded border border-line-strong px-2 py-0.5 text-xs font-bold hover:bg-panel"
+                      >
+                        Übernehmen
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

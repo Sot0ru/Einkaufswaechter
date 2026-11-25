@@ -13,7 +13,9 @@ export const PriceConfidenceBadge = ({
   className?: string;
 }) => {
   const toneClass =
-    confidence.source === "live_scraped" || confidence.source === "receipt_verified"
+    confidence.source === "live_scraped" ||
+    confidence.source === "receipt_verified" ||
+    confidence.source === "open_prices"
       ? "border-route bg-paper text-route"
       : confidence.source === "user_calibrated"
         ? "border-ink bg-paper text-ink"
@@ -80,3 +82,85 @@ export const ShrinkflationAlert = ({
     <span>{warning.message}</span>
   </span>
 );
+
+export interface PrimaryBadgeInfo {
+  label: string;
+  tone: "route" | "route-solid" | "detour" | "neutral";
+}
+
+/** Wählt das eine wichtigste Haupt-Badge für eine Artikelzeile im Vergleich oder im Laden */
+export const resolvePrimaryItemBadge = (params: {
+  isOffer: boolean;
+  usedLoyaltyApp: boolean;
+  loyaltyAppName: string | null;
+  deal?: DealAssessment | null;
+}): PrimaryBadgeInfo | null => {
+  if (params.usedLoyaltyApp) {
+    return {
+      label: params.loyaltyAppName ? `Mit ${params.loyaltyAppName}` : "Mit App",
+      tone: "route",
+    };
+  }
+  if (params.deal?.rating === "top_deal") {
+    return { label: params.deal.label, tone: "route-solid" };
+  }
+  if (params.deal?.rating === "fake_deal") {
+    return { label: params.deal.label, tone: "detour" };
+  }
+  if (params.deal?.rating === "good_deal") {
+    return { label: params.deal.label, tone: "route" };
+  }
+  if (params.isOffer) {
+    return { label: "Angebot", tone: "route" };
+  }
+  return null;
+};
+
+/** Wählt das eine wichtigste Haupt-Badge für eine Zeile in der Angebotsliste */
+export const resolvePrimaryOfferBadge = (params: {
+  deal: DealAssessment;
+  startsThursday: boolean;
+}): PrimaryBadgeInfo | null => {
+  if (params.deal.rating === "top_deal") {
+    return { label: params.deal.label, tone: "route-solid" };
+  }
+  if (params.deal.rating === "fake_deal") {
+    return { label: params.deal.label, tone: "detour" };
+  }
+  if (params.deal.rating === "good_deal") {
+    return { label: params.deal.label, tone: "route" };
+  }
+  if (params.startsThursday) {
+    return { label: "ab Donnerstag", tone: "neutral" };
+  }
+  return null;
+};
+
+export const PrimaryItemBadge = ({
+  badge,
+  className,
+}: {
+  badge: PrimaryBadgeInfo;
+  className?: string;
+}) => {
+  const toneClass =
+    badge.tone === "route-solid"
+      ? "border-route bg-route text-route-ink"
+      : badge.tone === "route"
+        ? "border-route bg-paper text-route"
+        : badge.tone === "detour"
+          ? "border-detour bg-detour-soft text-ink"
+          : "border-line-strong bg-paper text-muted";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex flex-none items-center rounded border px-1.5 pt-0.5 text-xs font-bold leading-tight",
+        toneClass,
+        className,
+      )}
+    >
+      {badge.label}
+    </span>
+  );
+};

@@ -36,7 +36,7 @@ export const SavedListsPanel = ({
   shareLink,
   onStopSharing,
 }: SavedListsPanelProps) => (
-  <section aria-labelledby="saved-lists-title" className="border-t border-line-strong pt-6">
+  <section aria-labelledby="saved-lists-title">
     <h2 id="saved-lists-title" className="text-xl font-black">
       Gespeicherte Listen
     </h2>

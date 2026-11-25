@@ -6,7 +6,8 @@ Du schreibst deine Einkaufsliste ganz normal nach **allgemeinen Produktkategorie
 
 1. **Alles in 1 Laden:** Welcher einzelne Supermarkt ist diese Woche für deinen gesamten Warenkorb am günstigsten?
 2. **Smart-Split (max. 2 Läden):** Lohnt sich ein kurzer Abstecher zu einem zweiten Markt nur für die echten Wochen-Knaller (z. B. erst ab ≥ 5,00 € Zusatz-Ersparnis)?
-3. **Abhak-Liste nach Laufroute:** Getrennte Einkaufslisten pro Markt, sortiert nach Abteilungen (*Obst & Gemüse → Backwaren → Kühlregal → Fleisch & Wurst → Trockensortiment → Tiefkühl → Getränke → Haushalt*) – inklusive konkretem Hinweis, zu welcher Marke/Packung du beim Angebot im Regal greifen musst.
+3. **Eigene Supermarkt-Kombination (2+ Läden):** Kombiniere 2 oder mehr Märkte deiner Wahl (z. B. Lidl + Rewe oder Aldi + Edeka) – die App teilt den Warenkorb optimal auf und übernimmt die Kombi direkt in die Laufroute.
+4. **Abhak-Liste nach Laufroute:** Getrennte Einkaufslisten pro Markt, sortiert nach Abteilungen (*Obst & Gemüse → Backwaren → Kühlregal → Fleisch & Wurst → Trockensortiment → Tiefkühl → Getränke → Haushalt*) – inklusive konkretem Hinweis, zu welcher Marke/Packung du beim Angebot im Regal greifen musst.
 
 ---
 

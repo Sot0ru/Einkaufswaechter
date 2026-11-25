@@ -25,6 +25,8 @@ const OptimizeRequestSchema = z.object({
   /** Persönlicher Umweg je Markt in Minuten, z. B. { "kaufland": 15 } */
   storeDetourMinutes: z.partialRecord(z.enum(validStoreIds), z.number().int().min(0).max(240)).optional(),
   minSavingsPerDetourMinuteCents: z.number().int().min(0).max(1000).optional(),
+  /** Optional: 2 oder mehr frei kombinierte Supermärkte */
+  customComboStores: z.array(z.enum(validStoreIds)).min(2).max(validStoreIds.length).optional(),
 });
 
 export async function POST(request: Request) {

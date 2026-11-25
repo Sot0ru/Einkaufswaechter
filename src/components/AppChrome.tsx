@@ -11,15 +11,20 @@ interface TabDefinition {
 }
 
 const TABS: readonly TabDefinition[] = [
-  { id: "compare", label: () => "Preisvergleich", shortLabel: () => "Vergleich", Icon: RouteIcon },
+  { id: "compare", label: () => "Vergleich", shortLabel: () => "Vergleich", Icon: RouteIcon },
   {
     id: "list",
-    label: (count) => `Einkaufsliste (${count})`,
+    label: (count) => `Liste (${count})`,
     shortLabel: (count) => `Liste (${count})`,
     Icon: ListIcon,
   },
   { id: "instore", label: () => "Im Laden", shortLabel: () => "Im Laden", Icon: CartIcon },
-  { id: "offers", label: () => "Angebote", shortLabel: () => "Angebote", Icon: TagIcon },
+  {
+    id: "offers",
+    label: () => "Angebote & Preise",
+    shortLabel: () => "Angebote",
+    Icon: TagIcon,
+  },
 ];
 
 interface TabNavigationProps {

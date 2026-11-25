@@ -4,8 +4,7 @@ import {
   resolveZipRegion,
   type ZipRegionInfo,
 } from "@/lib/providers/zip-offer-fetcher";
-import { CATEGORIES } from "@/lib/rules/catalog";
-import { cn, PRIMARY_BUTTON, SECONDARY_BUTTON, ToggleChip } from "./ui";
+import { ChevronIcon, cn, PRIMARY_BUTTON, SECONDARY_BUTTON, ToggleChip } from "./ui";
 
 interface ZipOffersPanelProps {
   zipCode: string;
@@ -13,8 +12,10 @@ interface ZipOffersPanelProps {
   activeZipCode: string;
   region: ZipRegionInfo;
   onFetchOffers: (zipCode?: string) => void;
+  onFetchOpenPrices: () => void;
   onLiveScrape: () => void;
   isSyncing: boolean;
+  isFetchingOpenPrices: boolean;
   isLiveScraping: boolean;
   feedback: string | null;
   chainStatuses: readonly ChainScrapeStatus[];
@@ -32,26 +33,32 @@ export const ZipOffersPanel = ({
   activeZipCode,
   region,
   onFetchOffers,
+  onFetchOpenPrices,
   onLiveScrape,
   isSyncing,
+  isFetchingOpenPrices,
   isLiveScraping,
   feedback,
   chainStatuses,
 }: ZipOffersPanelProps) => {
-  const busy = isSyncing || isLiveScraping;
+  const busy = isSyncing || isLiveScraping || isFetchingOpenPrices;
 
   return (
-    <section aria-labelledby="zip-offers-title">
-      <h1 id="zip-offers-title" className="text-[26px] leading-tight font-black tracking-tight">
-        Angebote für deine Postleitzahl
-      </h1>
-      <p className="mt-2 max-w-[70ch] text-[15px]">
-        Aktuell PLZ {activeZipCode}: {region.regionLabel}, {region.aldiVariant}. Alle Angebote
-        werden den {CATEGORIES.length} Kategorien des Sortiments zugeordnet.
-      </p>
+    <section
+      aria-labelledby="zip-offers-title"
+      className="rounded-xl border border-line bg-paper p-5"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="zip-offers-title" className="text-xl leading-tight font-black tracking-tight">
+          Angebote für PLZ {activeZipCode}
+        </h2>
+        <span className="text-sm text-muted">
+          {region.regionLabel} · {region.aldiVariant}
+        </span>
+      </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-2.5">
-        <label className="flex flex-col gap-1.5 text-[15px] font-bold">
+        <label className="flex flex-col gap-1 text-xs font-bold text-muted">
           Postleitzahl
           <input
             type="text"
@@ -60,7 +67,7 @@ export const ZipOffersPanel = ({
             inputMode="numeric"
             maxLength={5}
             autoComplete="postal-code"
-            className="h-12 w-32 rounded border border-line-strong bg-paper px-3 pt-0.5 text-[17px] font-semibold tabular-nums"
+            className="h-12 w-28 rounded-md border border-line-strong bg-paper px-3 text-base font-bold text-ink tabular-nums"
           />
         </label>
         <button
@@ -69,49 +76,60 @@ export const ZipOffersPanel = ({
           disabled={busy}
           className={cn(PRIMARY_BUTTON, "disabled:opacity-60")}
         >
-          {isSyncing ? "Angebote werden abgerufen…" : "Angebote abrufen"}
+          {isSyncing ? "Lädt…" : "Angebote laden"}
+        </button>
+        <button
+          type="button"
+          onClick={onFetchOpenPrices}
+          disabled={busy}
+          className={cn(SECONDARY_BUTTON, "text-sm disabled:opacity-60")}
+        >
+          {isFetchingOpenPrices ? "Open Prices…" : "Open Prices"}
         </button>
         <button
           type="button"
           onClick={onLiveScrape}
           disabled={busy}
-          className={cn(SECONDARY_BUTTON, "disabled:opacity-60")}
+          className={cn(SECONDARY_BUTTON, "text-sm disabled:opacity-60")}
         >
-          {isLiveScraping ? "Ketten werden abgefragt…" : "Live bei den Ketten abrufen"}
+          {isLiveScraping ? "Live-Abruf…" : "Live-Abruf"}
         </button>
       </div>
 
-      <fieldset className="mt-5">
-        <legend className="mb-2 text-[15px] font-bold">Region ausprobieren</legend>
-        <div className="flex flex-wrap gap-1.5">
+      {feedback && (
+        <p role="status" className="mt-3 text-sm font-bold text-route">
+          {feedback}
+        </p>
+      )}
+
+      <details className="group mt-4 border-t border-line pt-3">
+        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-bold text-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+          <span>Andere Region ausprobieren</span>
+          <ChevronIcon className="size-4 transition-transform duration-150 group-open:rotate-180" />
+        </summary>
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
           {POPULAR_GERMAN_ZIPS.map((entry) => (
             <ToggleChip
               key={entry.zipCode}
               active={activeZipCode === entry.zipCode}
               onToggle={() => onFetchOffers(entry.zipCode)}
             >
-              {entry.zipCode} {entry.city}, {resolveZipRegion(entry.zipCode).aldiVariant}
+              {entry.zipCode} {entry.city} ({resolveZipRegion(entry.zipCode).aldiVariant})
             </ToggleChip>
           ))}
         </div>
-      </fieldset>
-
-      {feedback && (
-        <p role="status" className="mt-4 max-w-[70ch] text-[15px] font-bold">
-          {feedback}
-        </p>
-      )}
+      </details>
 
       {chainStatuses.length > 0 && (
-        <ul className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="mt-4 grid gap-2 border-t border-line pt-4 sm:grid-cols-2 lg:grid-cols-4">
           {chainStatuses.map((chain) => {
             const isLive = chain.status === "live_scraped";
             return (
               <li
                 key={chain.storeId}
-                className={cn("rounded-md px-3.5 py-3", isLive ? "bg-panel" : "border border-line")}
+                className={cn("rounded-lg px-3 py-2.5", isLive ? "bg-panel" : "border border-line")}
               >
-                <p className="flex items-center justify-between gap-2">
+                <p className="flex items-center justify-between gap-2 text-sm">
                   <span className="font-extrabold">{chain.storeName}</span>
                   <span
                     className={cn(
@@ -122,7 +140,7 @@ export const ZipOffersPanel = ({
                     {chainStatusLabel(chain)}
                   </span>
                 </p>
-                <p className="mt-1 text-[13px] text-muted">{chain.message}</p>
+                <p className="mt-1 text-xs text-muted">{chain.message}</p>
               </li>
             );
           })}

@@ -49,6 +49,7 @@ interface SettingsPanelProps {
   nearbyStoresFeedback?: string | null;
   onFetchNearbyStores?: () => void;
   onApplyNearbyDetours?: () => void;
+  embedded?: boolean;
 }
 
 const formatKm = (km: number): string => `${km.toFixed(1).replace(".", ",")} km`;
@@ -76,6 +77,7 @@ export const SettingsPanel = ({
   nearbyStoresFeedback,
   onFetchNearbyStores,
   onApplyNearbyDetours,
+  embedded = false,
 }: SettingsPanelProps) => {
   const stateInfo = resolveGermanStateForZip(region.zipCode);
   const holidayName = getGermanHolidayForDate(shoppingDate, stateInfo.code);
@@ -89,7 +91,10 @@ export const SettingsPanel = ({
     <aside
       id="einstellungen"
       aria-label="Einstellungen"
-      className="flex min-w-0 scroll-mt-6 flex-col gap-6 rounded-md bg-panel p-5 sm:p-6"
+      className={cn(
+        "flex min-w-0 scroll-mt-6 flex-col gap-6",
+        !embedded && "rounded-md bg-panel p-5 sm:p-6",
+      )}
     >
       <div className="flex flex-col gap-1.5">
         <label className="flex flex-col gap-1.5 text-[15px] font-bold">

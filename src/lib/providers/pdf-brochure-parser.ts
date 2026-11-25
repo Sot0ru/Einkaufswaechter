@@ -226,13 +226,13 @@ export const extractTextFromPdfBytes = async (pdfBytes: Uint8Array): Promise<str
 
 export interface ExtractedBrochureFileResult {
   text: string;
-  fileType: "pdf" | "html" | "text";
+  fileType: "pdf" | "html" | "csv" | "text";
   lineCount: number;
 }
 
 /**
- * Verarbeitet hochgeladene Prospekt-Dateien (.pdf, .html, .txt) komplett lokal im Browser
- * und liefert direkt für `parseBrochureText` aufbereitete Angebotszeilen zurück.
+ * Verarbeitet hochgeladene Prospekt- und Produktfeed-Dateien (.pdf, .html, .csv, .tsv, .txt)
+ * komplett lokal im Browser und liefert direkt für `parseBrochureText` aufbereitete Zeilen zurück.
  */
 export const extractBrochureTextFromFile = async (params: {
   fileName: string;
@@ -248,6 +248,19 @@ export const extractBrochureTextFromFile = async (params: {
   }
 
   const decoded = new TextDecoder("utf-8").decode(params.bytes);
+
+  if (lower.endsWith(".csv") || lower.endsWith(".tsv")) {
+    const { parseStructuredCsvProductFeed, formatFeedOffersAsBrochureText } = await import(
+      "./product-feed-parser"
+    );
+    const parsed = parseStructuredCsvProductFeed(decoded, {
+      fallbackStoreId: params.storeId,
+    });
+    if (parsed.parsedOffers.length > 0) {
+      const text = formatFeedOffersAsBrochureText(parsed.parsedOffers);
+      return { text, fileType: "csv", lineCount: parsed.parsedOffers.length };
+    }
+  }
 
   if (lower.endsWith(".html") || lower.endsWith(".htm") || decoded.trimStart().startsWith("<")) {
     const { rawOffers } = extractRawOffersFromDocument(decoded, params.storeId);
