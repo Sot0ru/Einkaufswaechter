@@ -1,5 +1,5 @@
-const CACHE_NAME = "einkaufswaechter-pwa-e6f7ae7";
-const ASSETS = ["./", "./index.html", "./app.css?v=e6f7ae7", "./app.js?v=e6f7ae7", "./manifest.webmanifest", "./icon.svg", "./overpass.woff2"];
+const CACHE_NAME = "einkaufswaechter-pwa-6c0aeba";
+const ASSETS = ["./", "./index.html", "./app.css?v=6c0aeba", "./app.js?v=6c0aeba", "./manifest.webmanifest", "./icon.svg", "./overpass.woff2"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
